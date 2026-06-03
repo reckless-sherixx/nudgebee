@@ -179,48 +179,64 @@ const GraphSections = ({ accountId, heading = '', id = 'KuberneteUtilizationSumm
     setShouldFetchIngressEgress(true);
   }, [selectedDateRange, chartUnit]);
 
+  // Single-pass: partitions interleaved CPU/Memory metrics and builds chart data without sparse placeholders
   useEffect(() => {
     if (!clusterData) {
       return;
     }
 
-    const cpuLinechartData = {
-      data: [clusterData?.map((item) => formatNumber(item.avg_cpu_used_node)), clusterData?.map((item) => formatNumber(item.total_cpu_allocatable))],
-      label: clusterData?.map((item) => getDateStringFromDateUnit(item.timestamp, chartUnit)) || [],
-      chartLabel: ['Avg CPU', 'Allocatable CPU'],
-    };
-    setCpuLinechartData(cpuLinechartData);
+    const cpuUsed = [];
+    const cpuAllocatable = [];
+    const cpuLabels = [];
+    const memUsed = [];
+    const memAllocatable = [];
+    const memLabels = [];
 
-    const memLinechartData = {
-      data: [
-        clusterData?.map((item) => formatMemory(item.avg_memory_used_node, 'bytes', 'gb', false)),
-        clusterData?.map((item) => formatMemory(item.total_memory_allocatable, 'bytes', 'gb', false)),
-      ],
-      label: clusterData?.map((item) => getDateStringFromDateUnit(item.timestamp, chartUnit)) || [],
-      chartLabel: ['Avg Mem', 'Allocatable Mem'],
-    };
-    setMemLinechartData(memLinechartData);
+    for (const item of clusterData) {
+      if (!item) continue;
+      const label = getDateStringFromDateUnit(item.timestamp, chartUnit);
+
+      if ('avg_cpu_used_node' in item) {
+        cpuUsed.push(formatNumber(item.avg_cpu_used_node));
+        cpuAllocatable.push(formatNumber(item.total_cpu_allocatable));
+        cpuLabels.push(label);
+      }
+
+      if ('avg_memory_used_node' in item) {
+        memUsed.push(formatMemory(item.avg_memory_used_node, 'bytes', 'gb', false));
+        memAllocatable.push(formatMemory(item.total_memory_allocatable, 'bytes', 'gb', false));
+        memLabels.push(label);
+      }
+    }
+
+    setCpuLinechartData({ data: [cpuUsed, cpuAllocatable], label: cpuLabels, chartLabel: ['Avg CPU', 'Allocatable CPU'] });
+    setMemLinechartData({ data: [memUsed, memAllocatable], label: memLabels, chartLabel: ['Avg Mem', 'Allocatable Mem'] });
   }, [clusterData, chartUnit]);
 
+  // Single-pass: partitions network metrics and builds chart data in one loop instead of 4 filter+map chains
   useEffect(() => {
     if (!networkData) {
       return;
     }
 
-    const ingressLinechartData = {
-      data: networkData?.filter((i) => i.metric == 'networkTransferBytes')?.map((item) => item.avg_value / (1024 * 1024 * 1024)) || [],
-      label:
-        networkData?.filter((i) => i.metric == 'networkTransferBytes')?.map((item) => getDateStringFromDateUnit(item.timestamp, chartUnit)) || [],
-      chartLabel: ['Ingress'],
-    };
-    setIngressLinechartData(ingressLinechartData);
+    const ingressData = [];
+    const ingressLabels = [];
+    const egressData = [];
+    const egressLabels = [];
 
-    const egressLinechartData = {
-      data: networkData?.filter((i) => i.metric == 'networkReceiveBytes')?.map((item) => item.avg_value / (1024 * 1024 * 1024)) || [],
-      label: networkData?.filter((i) => i.metric == 'networkReceiveBytes')?.map((item) => getDateStringFromDateUnit(item.timestamp, chartUnit)) || [],
-      chartLabel: ['Egress'],
-    };
-    setEgressLinechartData(egressLinechartData);
+    for (const item of networkData) {
+      if (!item) continue;
+      if (item.metric === 'networkTransferBytes') {
+        ingressData.push(item.avg_value / (1024 * 1024 * 1024));
+        ingressLabels.push(getDateStringFromDateUnit(item.timestamp, chartUnit));
+      } else if (item.metric === 'networkReceiveBytes') {
+        egressData.push(item.avg_value / (1024 * 1024 * 1024));
+        egressLabels.push(getDateStringFromDateUnit(item.timestamp, chartUnit));
+      }
+    }
+
+    setIngressLinechartData({ data: ingressData, label: ingressLabels, chartLabel: ['Ingress'] });
+    setEgressLinechartData({ data: egressData, label: egressLabels, chartLabel: ['Egress'] });
   }, [networkData, chartUnit]);
 
   const handleDateRangeChange = (passedSelectedDateTime) => {

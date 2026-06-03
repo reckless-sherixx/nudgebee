@@ -1,10 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FormControl, TextField, InputAdornment, IconButton } from '@mui/material';
 import { searchSvg } from '@assets';
 import PropTypes from 'prop-types';
 import ClearIcon from '@mui/icons-material/Clear';
 import { colors } from 'src/utils/colors';
 import SafeIcon from './SafeIcon';
+
+// Debounce onChange to avoid firing parent callbacks on every keystroke.
+// Input stays responsive via local state; parent sees updates after 300ms pause.
+const DEBOUNCE_MS = 300;
 
 const CustomSearch = ({
   label = '',
@@ -22,6 +26,13 @@ const CustomSearch = ({
 }) => {
   const [searchText, setSearchText] = useState(value ?? '');
   const [shouldTriggerFilter, setShouldTriggerFilter] = useState(false);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (shouldTriggerFilter && searchText === '' && onEnterPress) {
@@ -34,19 +45,32 @@ const CustomSearch = ({
     const newValue = event.target.value;
     setSearchText(newValue);
     if (onChange) {
-      onChange(newValue);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        onChange(newValue);
+      }, DEBOUNCE_MS);
     }
   };
 
   const handleKeyDown = (event) => {
-    if (event.key === 'Enter' && onEnterPress) {
-      onEnterPress();
+    if (event.key === 'Enter') {
+      // Flush pending debounce so parent has current text before onEnterPress.
+      // Use event.target.value (not searchText state, which may be stale in the
+      // same tick if user types then immediately presses Enter).
+      const latestValue = event.target.value;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+        if (onChange) onChange(latestValue);
+      }
+      if (onEnterPress) onEnterPress(latestValue);
     }
   };
 
   const handleClear = () => {
     setShouldTriggerFilter(true);
     setSearchText('');
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     if (onChange) {
       onChange('');
     }

@@ -38,6 +38,16 @@ const askNubiButtonStyle = {
   gap: 'var(--ds-space-1)',
 };
 
+// Prevent XSS when interpolating data into tooltip innerHTML
+const escapeHtml = (str) => {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 /**
  * @param {{
  *   data?: any[],
@@ -61,7 +71,6 @@ const askNubiButtonStyle = {
  *   integerYlabel?: boolean,
  * }} props
  */
-
 const Charts = ({
   data = [],
   labels = [],
@@ -604,17 +613,18 @@ const Charts = ({
           const metrics = chartDataMetrices[datasetLabel] || {};
           const metricsTextArray = [];
 
+          const safeUnit = escapeHtml(unit);
           if (metrics.max != null) {
-            metricsTextArray.push(`Max: ${metrics.max}${unit}`);
+            metricsTextArray.push(`Max: ${escapeHtml(metrics.max)}${safeUnit}`);
           }
           if (metrics.min != null) {
-            metricsTextArray.push(`Min: ${metrics.min}${unit}`);
+            metricsTextArray.push(`Min: ${escapeHtml(metrics.min)}${safeUnit}`);
           }
           if (metrics.p99 != null) {
-            metricsTextArray.push(`P99: ${metrics.p99}${unit}`);
+            metricsTextArray.push(`P99: ${escapeHtml(metrics.p99)}${safeUnit}`);
           }
           if (metrics.avg != null) {
-            metricsTextArray.push(`Avg: ${metrics.avg}${unit}`);
+            metricsTextArray.push(`Avg: ${escapeHtml(metrics.avg)}${safeUnit}`);
           }
 
           const metricsText = metricsTextArray.filter(Boolean).join(', ') || '';
@@ -622,11 +632,13 @@ const Charts = ({
           return `<div style="margin-bottom: 4px; max-width: ${TOOLTIP_MAX_WIDTH}px; z-index: 1000;">
               <div style="display: flex; align-items: center; margin-bottom: 4px;">
                 <span
-                  style="width: 10px; height: 10px; background: ${color}; display: inline-block; margin-right: 6px; border-radius: 2px;"></span>
-                <strong>${tooltip.title?.[0] || ''}</strong>
+                  style="width: 10px; height: 10px; background: ${escapeHtml(
+                    color
+                  )}; display: inline-block; margin-right: 6px; border-radius: 2px;"></span>
+                <strong>${escapeHtml(tooltip.title?.[0] || '')}</strong>
               </div>
-              <div style="margin: 4px 0;"><strong>Value:</strong> ${value}</div>
-              <div style="margin: 6px 0; word-break: break-all; overflow-wrap: break-word;"><strong>Label:</strong> ${datasetLabel}</div>
+              <div style="margin: 4px 0;"><strong>Value:</strong> ${escapeHtml(value)}</div>
+              <div style="margin: 6px 0; word-break: break-all; overflow-wrap: break-word;"><strong>Label:</strong> ${escapeHtml(datasetLabel)}</div>
               ${metricsText ? `<div><strong>Metrics:</strong><br>${metricsText}</div>` : ''}
             </div>`;
         })

@@ -157,7 +157,6 @@ const KubernetesMonitoring: React.FC = () => {
     if (data == undefined || data.length == 0 || !consumeRelayServer) {
       return;
     }
-    let updatedStats = JSON.parse(JSON.stringify(data));
     const promises = [];
 
     let allUniqueAccounts = uniqueAcc;
@@ -188,32 +187,36 @@ const KubernetesMonitoring: React.FC = () => {
           .then((res: any) => {
             const statsData = res?.data?.data || [];
             if (statsData && statsData.length > 0) {
-              updatedStats = updatedStats.map((obj1: any) => {
-                if (obj1.accountId === value) {
-                  const matchingObj = statsData.find((obj2: any) => obj1.name === obj2.name && obj1.namespace === obj2.namespace);
-                  if (matchingObj) {
-                    return {
-                      ...obj1,
-                      cpu: matchingObj?.cpu_p99 ? (matchingObj?.cpu_p99 * 1000).toFixed(0) : '-',
-                      memoryp99: matchingObj?.memory_p99,
-                      nrequests: Math.round(matchingObj?.total_request_count),
-                      latency: matchingObj?.latency,
-                      nerrors: Math.round(matchingObj?.failure_request_count),
-                      nerrorscritical: Math.round(matchingObj?.log_failure_count),
-                      maxCPUReq: matchingObj?.max_cpu_request ? (matchingObj?.max_cpu_request * 1000).toFixed(0) : '-',
-                      maxMemoryReq: matchingObj?.max_memory_request,
-                      maxMemoryUsage: matchingObj?.memory_max,
-                      max_cpu_limit: matchingObj?.max_cpu_limit ? (matchingObj?.max_cpu_limit * 1000).toFixed(0) : '-',
-                      max_memory_limit: matchingObj?.max_memory_limit,
-                      cpu_p50: matchingObj?.cpu_p50 ? (matchingObj?.cpu_p50 * 1000).toFixed(0) : '-',
-                      memory_p50: matchingObj?.memory_p50,
-                    };
+              // O(m) map build + O(n) scan instead of O(n*m) nested .find()
+              const statsLookup = new Map<string, any>(statsData.map((s: any) => [`${s.name}\0${s.namespace}`, s]));
+              // Functional setData so concurrent per-account promises don't
+              // race on a shared `updatedStats` reference.
+              setData((prevStats: any[]) =>
+                prevStats.map((obj1: any) => {
+                  if (obj1.accountId === value) {
+                    const matchingObj = statsLookup.get(`${obj1.name}\0${obj1.namespace}`);
+                    if (matchingObj) {
+                      return {
+                        ...obj1,
+                        cpu: matchingObj?.cpu_p99 ? (matchingObj?.cpu_p99 * 1000).toFixed(0) : '-',
+                        memoryp99: matchingObj?.memory_p99,
+                        nrequests: Math.round(matchingObj?.total_request_count),
+                        latency: matchingObj?.latency,
+                        nerrors: Math.round(matchingObj?.failure_request_count),
+                        nerrorscritical: Math.round(matchingObj?.log_failure_count),
+                        maxCPUReq: matchingObj?.max_cpu_request ? (matchingObj?.max_cpu_request * 1000).toFixed(0) : '-',
+                        maxMemoryReq: matchingObj?.max_memory_request,
+                        maxMemoryUsage: matchingObj?.memory_max,
+                        max_cpu_limit: matchingObj?.max_cpu_limit ? (matchingObj?.max_cpu_limit * 1000).toFixed(0) : '-',
+                        max_memory_limit: matchingObj?.max_memory_limit,
+                        cpu_p50: matchingObj?.cpu_p50 ? (matchingObj?.cpu_p50 * 1000).toFixed(0) : '-',
+                        memory_p50: matchingObj?.memory_p50,
+                      };
+                    }
                   }
                   return obj1;
-                }
-                return obj1;
-              });
-              setData(updatedStats);
+                })
+              );
             }
           })
           .catch((err) => {

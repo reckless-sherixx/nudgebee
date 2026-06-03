@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box } from '@mui/material';
 import PropTypes from 'prop-types';
 import apiKubernetes1 from '@api1/kubernetes1';
@@ -12,7 +12,6 @@ import CustomLink from '@components1/common/CustomLink';
 import ShowPrometheusLineChart from '@components1/common/charts/ShowPrometheusLineChart';
 
 const HttpLatencyTable = ({ accountId, data }) => {
-  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rowMap, setRowMap] = useState(new Map());
   const [selectedDateRange, setSelectedDateRange] = useState({
@@ -171,12 +170,14 @@ const HttpLatencyTable = ({ accountId, data }) => {
     fetchData();
   }, [accountId, data.workloadName, data.namespaceName, selectedDateRange]);
 
-  // Update rows whenever rowMap changes
-  useEffect(() => {
+  // Derive rows synchronously from rowMap — avoids an extra render cycle
+  // that the previous useEffect + setState pattern caused on every data update.
+  const rows = useMemo(() => {
     if (rowMap.size > 0) {
-      setRows(convertRowMapToTableRows(rowMap));
+      return convertRowMapToTableRows(rowMap);
     }
-  }, [rowMap]);
+    return [];
+  }, [rowMap, accountId]);
 
   const handleDateRangeChange = (passedSelectedDateTime) => {
     setSelectedDateRange({
