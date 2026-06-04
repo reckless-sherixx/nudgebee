@@ -540,27 +540,24 @@ const NotificationRuleModal: React.FC<NotificationRuleModalProps> = ({
           }));
         });
     }
-    if (platforms.includes('google_chat')) {
-      setLoadingChannelList((prev) => ({
-        ...prev,
-        google_chat: true,
-      }));
-      apiAccount
-        .getNotificationChannelList('google_chat')
-        .then((res: any) => {
-          const teamOptions = res?.data?.data?.map((item: any) => ({ label: item.name, value: item.id })) || [];
-          setGChatChannelList(teamOptions || []);
-        })
-        .finally(() => {
-          setLoadingChannelList((prev) => ({
-            ...prev,
-            google_chat: false,
-          }));
-        });
-    }
 
     getClustersData();
   }, [installedPlatforms]);
+
+  // Google Chat destinations are bound spaces (service-account model), independent
+  // of any MessagingPlatform install — load once on mount.
+  useEffect(() => {
+    setLoadingChannelList((prev) => ({ ...prev, google_chat: true }));
+    apiAccount
+      .getNotificationChannelList('google_chat')
+      .then((res: any) => {
+        const teamOptions = res?.data?.data?.map((item: any) => ({ label: item.name, value: item.id })) || [];
+        setGChatChannelList(teamOptions || []);
+      })
+      .finally(() => {
+        setLoadingChannelList((prev) => ({ ...prev, google_chat: false }));
+      });
+  }, []);
 
   const fetchCluster = (notificationRuleObject: any) => {
     getClustersData();
@@ -859,7 +856,6 @@ const NotificationRuleModal: React.FC<NotificationRuleModalProps> = ({
         queryParams.mappings.push({
           channels: { name: channel['label'], id: channel['value'] },
           platform: 'google_chat',
-          installation_id: installationId.google_chat,
         });
       }
     }
@@ -1464,7 +1460,7 @@ const NotificationRuleModal: React.FC<NotificationRuleModalProps> = ({
             )}
 
             {/* Google Chat Badge — hidden for daily_recap (email-only) */}
-            {basedOnValue !== 'daily_recap' && installedPlatforms.filter((g: any) => g.platform == 'google_chat').length > 0 && (
+            {basedOnValue !== 'daily_recap' && (gChatChannelList.length > 0 || loadingChannelList.google_chat) && (
               <Box
                 id='gchat-badge'
                 onClick={() => setActiveChannel(activeChannel === 'google_chat' ? null : 'google_chat')}

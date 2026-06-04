@@ -18,7 +18,13 @@ from notifications_server.exceptions.common_exc import BeeHTTPError
 from notifications_server.exceptions.exceptions import Err
 from notifications_server.message_templates.blocks import MarkdownBlock, ContextBlock
 from notifications_server.models.db_base import BaseDB
-from notifications_server.models.models import MessagingPlatform, SentNotifications, ConfigurationStore
+from notifications_server.models.models import (
+    MessagingPlatform,
+    SentNotifications,
+    ConfigurationStore,
+    Integration,
+    IntegrationConfigValue,
+)
 from notifications_server.utils.datetime_utils import utc_now
 from notifications_server.utils.transformer import Transformer
 from notifications_server.services.cache import Cache
@@ -70,6 +76,13 @@ class CommonService:
             if platform not in ["slack", "ms_teams", "google_chat"]:
                 return BeeHTTPError(400, Err.OS0011, ["platform"])
 
+            # Google Chat uses the service-account bot + space bindings: the
+            # selectable destinations are the spaces bound to this tenant
+            # (google_chat_space integrations), not OAuth-listed channels. No
+            # MessagingPlatform row is involved.
+            if platform == "google_chat":
+                return self.get_google_chat_channels(tenant)
+
             messaging_platform = (
                 self.session.query(MessagingPlatform)
                 .filter(MessagingPlatform.tenant_id == tenant, MessagingPlatform.platform == platform)
@@ -83,8 +96,6 @@ class CommonService:
                 return self.get_slack_channels(messaging_platform)
             elif platform == "ms_teams":
                 return self.get_ms_teams_channels(messaging_platform)
-            elif platform == "google_chat":
-                return self.get_google_chat_channels(messaging_platform)
             return {}
         except Exception as e:
             self.session.rollback()
@@ -125,6 +136,11 @@ class CommonService:
             if platform not in ["slack", "ms_teams", "google_chat"]:
                 return BeeHTTPError(400, Err.OS0011, ["platform"])
 
+            # Google Chat (service-account bot) has no per-user/DM routing in the
+            # space-binding model — notifications target bound spaces only.
+            if platform == "google_chat":
+                return {"data": []}
+
             messaging_platform = (
                 self.session.query(MessagingPlatform)
                 .filter(MessagingPlatform.tenant_id == tenant, MessagingPlatform.platform == platform)
@@ -138,8 +154,6 @@ class CommonService:
                 return self.get_slack_users(messaging_platform)
             elif platform == "ms_teams":
                 return self.get_ms_teams_users(messaging_platform)
-            elif platform == "google_chat":
-                return self.get_google_chat_users(messaging_platform)
             return {}
         except Exception as e:
             self.session.rollback()
@@ -186,16 +200,6 @@ class CommonService:
         users = MsTeamsClient.list_users(messaging_platform.token)
         return {"data": users}
 
-    def get_google_chat_users(self, messaging_platform):
-        error = self._refresh_google_chat_token(messaging_platform)
-        if error:
-            return {"data": []}
-
-        # Google Chat can only list DM spaces that the bot is already part of
-        # Return list of users from existing DM conversations
-        dm_spaces = GoogleChatClient.list_dm_spaces(messaging_platform.token)
-        return {"data": dm_spaces}
-
     def get_ms_teams_channels(self, messaging_platform):
         error = self._refresh_ms_teams_token(messaging_platform)
         if error:
@@ -203,12 +207,39 @@ class CommonService:
 
         return {"data": MsTeamsClient.list_joined_teams(messaging_platform.token)}
 
-    def get_google_chat_channels(self, messaging_platform):
-        error = self._refresh_google_chat_token(messaging_platform)
-        if error:
-            return None
+    def get_google_chat_channels(self, tenant):
+        """List the Google Chat spaces bound to this tenant (google_chat_space integrations).
 
-        return {"data": GoogleChatClient.list_spaces(messaging_platform.token)}
+        Replaces the old user-OAuth space listing: in the service-account model the
+        selectable destinations are exactly the spaces an admin has bound to the tenant.
+        Returns the {id, name} shape the notification-rule picker already consumes.
+        """
+        bindings = (
+            self.session.query(Integration)
+            .filter(
+                Integration.tenant_id == tenant,
+                Integration.type == "google_chat_space",
+                Integration.status != "disabled",
+            )
+            .all()
+        )
+
+        binding_ids = [binding.id for binding in bindings]
+        display_rows = (
+            self.session.query(IntegrationConfigValue)
+            .filter(
+                IntegrationConfigValue.integration_id.in_(binding_ids),
+                IntegrationConfigValue.name == "display_name",
+            )
+            .all()
+            if binding_ids
+            else []
+        )
+        display_names = {row.integration_id: row.value for row in display_rows if row.value}
+
+        spaces = [{"id": binding.name, "name": display_names.get(binding.id) or binding.name} for binding in bindings]
+
+        return {"data": spaces}
 
     def join_channel(self, platform, account_id, tenant_id, channel_id, session_id=None, team_id=None, text=None):
         try:
@@ -1912,25 +1943,11 @@ class CommonService:
         return messaging_platform
 
     def gchat_reply_in_thread(self, space_name, thread_name, message, tenant_id):
-        """Post a text reply in a Google Chat thread.
-
-        Uses app-credential auth when GOOGLE_CHAT_SA_KEY is set (replies appear
-        as the Nudgebee bot). Falls back to user-OAuth from the tenant's
-        installation when not — same behavior as before the SA migration.
-        """
-        if GoogleChatAppClient.is_enabled():
-            return GoogleChatAppClient.post_message(
-                space=space_name,
-                message=message,
-                tenant=tenant_id,
-                thread_name=thread_name,
-            )
-        messaging_platform = self.get_google_chat_installation(tenant_id)
-        if not messaging_platform:
-            LOG.error("No Google Chat installation found for tenant %s", tenant_id)
+        """Post a text reply in a Google Chat thread as the Nudgebee bot (service account)."""
+        if not GoogleChatAppClient.is_enabled():
+            LOG.error("Cannot reply in Google Chat space %s — GOOGLE_CHAT_SA_KEY is not configured.", space_name)
             return None
-        return GoogleChatClient.post_to_google_chat(
-            token=messaging_platform.token,
+        return GoogleChatAppClient.post_message(
             space=space_name,
             message=message,
             tenant=tenant_id,
@@ -1938,30 +1955,11 @@ class CommonService:
         )
 
     def gchat_reply_with_card(self, space_name, thread_name, card, tenant_id):
-        """Post a Cards v2 message in a Google Chat thread.
-
-        Cards require app-credential auth — Google rejects card payloads
-        carrying user-OAuth tokens with 400 INVALID_ARGUMENT. When SA auth
-        isn't configured, attempts user-OAuth so the error path is uniform
-        with reply_in_thread (and logs a warning naming the missing env var).
-        """
-        if GoogleChatAppClient.is_enabled():
-            return GoogleChatAppClient.post_message(
-                space=space_name,
-                message=card,
-                tenant=tenant_id,
-                thread_name=thread_name,
-            )
-        LOG.warning(
-            "Google Chat card reply attempted without SA auth — "
-            "Google will reject card payloads on user-OAuth. Set GOOGLE_CHAT_SA_KEY."
-        )
-        messaging_platform = self.get_google_chat_installation(tenant_id)
-        if not messaging_platform:
-            LOG.error("No Google Chat installation found for tenant %s", tenant_id)
+        """Post a Cards v2 message in a Google Chat thread as the Nudgebee bot (service account)."""
+        if not GoogleChatAppClient.is_enabled():
+            LOG.error("Cannot post Google Chat card to space %s — GOOGLE_CHAT_SA_KEY is not configured.", space_name)
             return None
-        return GoogleChatClient.post_to_google_chat(
-            token=messaging_platform.token,
+        return GoogleChatAppClient.post_message(
             space=space_name,
             message=card,
             tenant=tenant_id,
