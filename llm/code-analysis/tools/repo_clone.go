@@ -80,8 +80,8 @@ func (t *RepoCloneTool) InputSchema() core.ToolSchema {
 				"properties": map[string]any{
 					"type": map[string]any{
 						"type":        "string",
-						"description": "Type of credentials (token, ssh_key, basic, encrypted, env_ref)",
-						"enum":        []string{"token", "ssh_key", "basic", "encrypted", "env_ref"},
+						"description": "Type of credentials (token, ssh_key, basic, env_ref, none)",
+						"enum":        []string{"token", "ssh_key", "basic", "env_ref", "none"},
 					},
 					"value": map[string]any{
 						"type":        "string",

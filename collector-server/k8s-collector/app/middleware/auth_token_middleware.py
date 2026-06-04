@@ -1,5 +1,4 @@
 import base64
-import hmac
 import json
 import logging
 from datetime import datetime
@@ -11,7 +10,7 @@ from config import Configs
 from db import clickhouse
 from exception.collector_exceptions import BadRequestError, InternalServerError, UnauthorizedError
 from controllers.base import BaseController, CredCache
-from middleware.utils import decrypt, validate_key
+from middleware.utils import validate_key
 
 INVALID_SECRET = "Invalid secret"
 
@@ -82,18 +81,16 @@ class AuthTokenMiddleware(BaseController):
         cursor = self.postgres_client.cursor()
         # Use parameterized query to prevent SQL injection (key comes from user input)
         cursor.execute(
-            "select cloud_account_id,access_secret,tenant,id,access_secret_v2 from agent where type = 'k8s' "
-            "and access_key = %s",
+            "select cloud_account_id,tenant,id,access_secret_v2 from agent where type = 'k8s' " "and access_key = %s",
             (key,),
         )
         resp = cursor.fetchone()
         if resp:
             return {
                 "id": resp[0],
-                "decrypted_secret": decrypt(resp[1]),
-                "tenant": resp[2],
-                "agent_id": resp[3],
-                "access_secret_v2": resp[4],
+                "tenant": resp[1],
+                "agent_id": resp[2],
+                "access_secret_v2": resp[3],
             }
         else:
             raise UnauthorizedError("Invalid key")
@@ -159,18 +156,12 @@ class AuthTokenMiddleware(BaseController):
                 cred_cache.save_value(key=key, value=value)
             if not value:
                 raise UnauthorizedError(INVALID_SECRET)
-            if "decrypted_secret" not in value and "access_secret_v2" not in value:
-                raise UnauthorizedError(INVALID_SECRET)
-            # Fail closed if the agent row has no usable secret of either
-            # version — otherwise the conditional below would silently let
-            # the request through.
-            decrypted_secret = value.get("decrypted_secret") or ""
+            # v2 bcrypt is the only supported path — legacy v1 AES was
+            # removed in B3 after DB confirmed no active agents on it.
             access_secret_v2 = value.get("access_secret_v2") or ""
-            if not decrypted_secret and not access_secret_v2:
+            if not access_secret_v2:
                 raise UnauthorizedError(INVALID_SECRET)
-            if decrypted_secret and not hmac.compare_digest(decrypted_secret, api_secret):
-                raise UnauthorizedError(INVALID_SECRET)
-            if access_secret_v2 and not validate_key(api_secret, access_secret_v2):
+            if not validate_key(api_secret, access_secret_v2):
                 raise UnauthorizedError(INVALID_SECRET)
 
             # add global attributes which can be accessed in the requests

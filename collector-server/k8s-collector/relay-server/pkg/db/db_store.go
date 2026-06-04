@@ -129,13 +129,12 @@ func (p *pgStore) ValidateAgent(ctx context.Context, accessKey, secret string) (
 
 	// 2) query DB
 	var row struct {
-		AccountID       string         `db:"cloud_account_id"`
-		AgentType       string         `db:"type"`
-		SecretEncrypted sql.NullString `db:"access_secret"`
-		SecretHashed    sql.NullString `db:"access_secret_v2"`
+		AccountID    string         `db:"cloud_account_id"`
+		AgentType    string         `db:"type"`
+		SecretHashed sql.NullString `db:"access_secret_v2"`
 	}
 	err := p.db.GetContext(ctx, &row, `
-        SELECT cloud_account_id, "type", access_secret, access_secret_v2
+        SELECT cloud_account_id, "type", access_secret_v2
           FROM agent
          WHERE access_key = $1
     `, accessKey)
@@ -148,15 +147,11 @@ func (p *pgStore) ValidateAgent(ctx context.Context, accessKey, secret string) (
 		return false, "", "", err
 	}
 
-	// 3) verify secret
+	// 3) verify secret (v2 bcrypt only — legacy v1 AES path was deleted in B3
+	// after DB confirmed no active agents on the legacy path)
 	ok := false
 	if row.SecretHashed.Valid {
 		if bcrypt.CompareHashAndPassword([]byte(row.SecretHashed.String), []byte(secret)) == nil {
-			ok = true
-		}
-	} else if row.SecretEncrypted.Valid {
-		dec, derr := utils.Decrypt(p.encryptionKey, row.SecretEncrypted.String)
-		if derr == nil && dec == secret {
 			ok = true
 		}
 	}

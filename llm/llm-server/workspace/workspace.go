@@ -472,7 +472,11 @@ func (w *workspaceManager) CreateWorkspace(ctx *security.RequestContext, account
 			{Name: "LLM_PROVIDER_API_VERSION", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: "LLM_PROVIDER_API_VERSION", Optional: &optional}}},
 			{Name: "LLM_PROVIDER_API_TYPE", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: "LLM_PROVIDER_API_TYPE", Optional: &optional}}},
 			{Name: "LLM_PROVIDER_MAX_RETRIES", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: "LLM_PROVIDER_MAX_RETRIES", Optional: &optional}}},
-			{Name: "NUDGEBEE_ENCRYPTION_KEY", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: "NUDGEBEE_ENCRYPTION_KEY", Optional: &optional}}},
+			// NUDGEBEE_ENCRYPTION_KEY intentionally NOT mounted (B4).
+			// The workspace pod's decrypt path was dead code — llm-server
+			// already decrypts integration credentials upstream and sends
+			// plaintext `type: "token"` in git_credentials. Removing the
+			// key from the pod env narrows the master-key blast radius.
 		}
 		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, secretEnvVars...)
 	}
