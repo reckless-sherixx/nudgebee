@@ -42,9 +42,13 @@ from notifications_server.services.bot_messages import (
     is_budget_exceeded_error,
     get_budget_exceeded_message,
 )
+from notifications_server.clients.google_chat_app_client import GoogleChatAppClient
 from notifications_server.repositories.account_repository import (
     get_active_accounts_with_connected_agents,
     get_account_by_id,
+)
+from notifications_server.repositories.google_chat_binding_repository import (
+    find_google_chat_binding,
 )
 from notifications_server.repositories.user_repository import get_llm_conversation_by_session
 from notifications_server.utils.transformer import Transformer
@@ -1650,12 +1654,42 @@ class Events:
                 LOG.warning("No Nudgebee account found for Google Chat user email: %s", user_email)
                 return
 
-            # Find which of the user's tenants has a google_chat installation
-            # (like Slack uses team_id from the event to find the bot installation)
-            tenant_id = self._find_gchat_tenant(tenants)
-            if not tenant_id:
-                LOG.error("No Google Chat installation found for user %s tenants", user_email)
+            # Binding-first resolution: a space bound via the integrations table
+            # picks its tenant deterministically from space.name. The binding is
+            # the security boundary — only the bound tenant's accounts are
+            # considered, even if the user is a member of multiple tenants.
+            try:
+                with Session(self.session.get_bind()) as session:
+                    binding = find_google_chat_binding(session, space_name)
+            except Exception:
+                # Fail closed: a binding-lookup error must not downgrade a bound
+                # space to the permissive legacy path — drop the message instead.
+                LOG.exception("Google Chat binding lookup failed for space %s; dropping message", space_name)
                 return
+
+            if binding:
+                # Normalize both sides to str. `tenants` is already a list of str
+                # tenant ids, but the explicit cast keeps the membership gate
+                # correct even if a caller ever passes UUID objects.
+                if str(binding.tenant_id) not in [str(t) for t in tenants]:
+                    self._gchat_reply_unbound(
+                        space_name,
+                        thread_name,
+                        "This space isn't connected to a Nudgebee organization you have "
+                        "access to. Ask your admin if this looks wrong.",
+                    )
+                    return
+                tenant_id = binding.tenant_id
+                scoped_tenants = [binding.tenant_id]
+            else:
+                # Legacy fallback for tenants that haven't bound yet.
+                # TODO: tighten — legacy path passes the full tenants list, which
+                # predates the binding-as-security-boundary model.
+                tenant_id = self._find_gchat_tenant(tenants)
+                if not tenant_id:
+                    self._send_connect_card(space_name, thread_name, event_data)
+                    return
+                scoped_tenants = tenants
 
             if not message_text:
                 self.common_service.gchat_reply_in_thread(
@@ -1683,7 +1717,7 @@ class Events:
             self.cache.cache_event_entry(thread_name, event_entry)
 
             await self._handle_gchat_new_conversation(
-                user_id, tenants, space_name, thread_name, tenant_id, message_text
+                user_id, scoped_tenants, space_name, thread_name, tenant_id, message_text
             )
 
         except Exception as e:
@@ -1803,28 +1837,81 @@ class Events:
         await self.async_query_llm_server(payload, headers)
 
     def _handle_gchat_added_to_space(self, event_data: dict):
-        """Post welcome card when bot is added to a Google Chat space."""
+        """Post welcome card when bot is added to a bound space; otherwise post the connect card."""
         try:
-            space_name = event_data.get("space", {}).get("name")
-            user_email = event_data.get("user", {}).get("email")
+            space_name = (event_data.get("space") or {}).get("name")
+            user_email = (event_data.get("user") or {}).get("email")
 
-            # Resolve tenant from the user who added the bot (like Slack uses team_id)
+            try:
+                with Session(self.session.get_bind()) as session:
+                    binding = find_google_chat_binding(session, space_name)
+            except Exception:
+                # Fail closed (see _handle_gchat_message): don't fall through to
+                # the legacy path — or re-raise to the caller — on a lookup error.
+                LOG.exception("Google Chat binding lookup failed for space %s; skipping ADDED_TO_SPACE", space_name)
+                return
+
+            if binding:
+                welcome_card = self.common_service.create_gchat_welcome_card()
+                self.common_service.gchat_reply_with_card(space_name, None, welcome_card, binding.tenant_id)
+                LOG.info("Sent welcome card to bound Google Chat space %s", space_name)
+                return
+
+            # Legacy fallback for tenants that haven't bound yet.
             tenant_id = None
             if user_email:
                 _, tenants = validate_and_get_user_tenants(user_email)
                 if tenants:
                     tenant_id = self._find_gchat_tenant(tenants)
 
-            if not tenant_id:
-                LOG.warning("Could not resolve tenant for ADDED_TO_SPACE event in space %s", space_name)
+            if tenant_id:
+                welcome_card = self.common_service.create_gchat_welcome_card()
+                self.common_service.gchat_reply_with_card(space_name, None, welcome_card, tenant_id)
+                LOG.info("Sent welcome card to legacy-resolved Google Chat space %s", space_name)
                 return
 
-            welcome_card = self.common_service.create_gchat_welcome_card()
-            self.common_service.gchat_reply_with_card(space_name, None, welcome_card, tenant_id)
-            LOG.info("Sent welcome card to Google Chat space %s", space_name)
+            self._send_connect_card(space_name, None, event_data)
+            LOG.info("Sent connect card to unbound Google Chat space %s", space_name)
         except Exception as e:
             LOG.exception("Error handling Google Chat ADDED_TO_SPACE: %s", e)
             raise
+
+    def _send_connect_card(self, space_name, thread_name, event_data):
+        """Post the bind-this-space card to a space that has no tenant binding."""
+        if not GoogleChatAppClient.is_enabled():
+            LOG.warning(
+                "Cannot post Google Chat connect card to space %s — " "GOOGLE_CHAT_SA_KEY is not configured.",
+                space_name,
+            )
+            return
+        display_name = (event_data.get("space") or {}).get("displayName", "") if event_data else ""
+        card = self.common_service.create_gchat_connect_card(space_name, display_name)
+        GoogleChatAppClient.post_message(
+            space=space_name,
+            message=card,
+            tenant=None,
+            thread_name=thread_name,
+        )
+
+    def _gchat_reply_unbound(self, space_name, thread_name, text):
+        """Post a text reply in a space with no tenant context.
+
+        Used when the binding membership gate rejects a user; we can't pick a
+        per-tenant outbound client because there's no tenant context, so we go
+        through the SA client directly.
+        """
+        if not GoogleChatAppClient.is_enabled():
+            LOG.warning(
+                "Cannot post unbound Google Chat reply to space %s — " "GOOGLE_CHAT_SA_KEY is not configured.",
+                space_name,
+            )
+            return
+        GoogleChatAppClient.post_message(
+            space=space_name,
+            message=text,
+            tenant=None,
+            thread_name=thread_name,
+        )
 
     def _request_gchat_account_confirmation(self, space_name, thread_name, valid_accounts, tenant_id):
         """Send account selection card to Google Chat thread."""

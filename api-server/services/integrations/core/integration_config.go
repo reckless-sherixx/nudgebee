@@ -106,8 +106,9 @@ func CreateIntegrationConfig(
 
 	isUpdate := integrationId != ""
 
-	// Make accountIds optional for ticketing category (tenant-level integrations)
-	if integration.Category() != IntegrationCategoryTicketing && len(accountIds) == 0 {
+	// Tenant-scoped categories (ticketing, messaging) bind to a tenant directly
+	// and may be created with no cloud-account mappings.
+	if !integration.Category().IsTenantScoped() && len(accountIds) == 0 {
 		return IntegrationDto{}, errors.New("integrations: accountId is required")
 	}
 

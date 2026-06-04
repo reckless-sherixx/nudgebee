@@ -2040,6 +2040,64 @@ class CommonService:
         }
 
     @staticmethod
+    def create_gchat_connect_card(space_name, display_name=""):
+        """Build a Cards v2 connect card for spaces without a tenant binding.
+
+        Routing key is `space_id`; `display_name` is a UI label only and is
+        URL-encoded into the connect-page query string for the post-bind UX.
+        """
+        import urllib.parse
+
+        branding_name = settings.urls.branding_name
+        branding_logo = settings.urls.branding_logo_url
+        base_url = settings.urls.base_url
+
+        qs = {"space_id": space_name}
+        if display_name:
+            qs["display_name"] = display_name
+        connect_url = f"{base_url}/integrations/connect/google-chat?{urllib.parse.urlencode(qs)}"
+
+        return {
+            "cardsV2": [
+                {
+                    "cardId": "connect-space",
+                    "card": {
+                        "header": {
+                            "title": f"Connect this space to {branding_name}",
+                            "imageUrl": branding_logo,
+                            "imageType": "CIRCLE",
+                        },
+                        "sections": [
+                            {
+                                "widgets": [
+                                    {
+                                        "textParagraph": {
+                                            "text": (
+                                                f"This space isn't connected to a {branding_name} "
+                                                "organization yet. A tenant admin needs to bind it "
+                                                "before I can help."
+                                            )
+                                        }
+                                    },
+                                    {
+                                        "buttonList": {
+                                            "buttons": [
+                                                {
+                                                    "text": f"Connect to {branding_name}",
+                                                    "onClick": {"openLink": {"url": connect_url}},
+                                                }
+                                            ]
+                                        }
+                                    },
+                                ]
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+
+    @staticmethod
     def create_gchat_welcome_card():
         """Build a Cards v2 welcome card for ADDED_TO_SPACE events."""
         from notifications_server.services.bot_messages import SIGNUP_URL
