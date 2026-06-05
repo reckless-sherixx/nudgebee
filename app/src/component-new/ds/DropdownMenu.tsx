@@ -117,6 +117,12 @@ export interface DropdownMenuProps {
   onRefresh?: () => void;
   /** Tooltip / aria-label for the refresh button. Defaults to "Refresh". */
   refreshLabel?: string;
+  /**
+   * Extra action button(s) rendered in the search header to the right of the
+   * built-in refresh button (or in its place when `onRefresh` is omitted).
+   * Use for small icon-only actions that belong to the menu surface itself.
+   */
+  headerActions?: React.ReactNode;
   /** Called after any item.onSelect (or after dismissal) */
   onClose?: () => void;
   disablePortal?: boolean;
@@ -159,13 +165,14 @@ export function DropdownMenu({
   loading = false,
   onRefresh,
   refreshLabel = 'Refresh',
+  headerActions,
   onClose,
   disablePortal = true,
 }: DropdownMenuProps) {
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
   const [search, setSearch] = React.useState('');
   const open = Boolean(anchorEl);
-  const showHeader = searchable || !!onRefresh;
+  const showHeader = searchable || !!onRefresh || !!headerActions;
 
   const close = () => {
     setAnchorEl(null);
@@ -296,6 +303,7 @@ export function DropdownMenu({
                 <RefreshIconSvg />
               </Box>
             )}
+            {headerActions}
           </Box>
         )}
         <OverlayScrollBox maxHeight={itemsMaxHeight}>

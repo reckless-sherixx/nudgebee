@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { Badge, Box, CircularProgress, Typography } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -10,10 +10,7 @@ import apiWorkflow from '@api1/workflow';
 import { snackbar } from '@components1/common/snackbarService';
 import { parseHttpResponseBodyMessage } from 'src/utils/common';
 import { colors, ds } from 'src/utils/colors';
-import { manualTriggerIcon } from '@assets';
-import SafeIcon from '@components1/common/SafeIcon';
 import Datetime from '@components1/common/format/Datetime';
-import CustomLabels from '@components1/common/widgets/CustomLabels';
 import TriggerWorkflowModal from './TriggerWorkflowModal';
 import { getDefaultTriggerInputs, getPrimaryTriggerType, getWorkflowInputSchema, hasManualTrigger } from '../utils/workflowTriggerHelpers';
 
@@ -47,12 +44,16 @@ interface WorkflowListItem {
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
+const StatusDot: React.FC<{ color: string }> = ({ color }) => (
+  <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
+);
+
 const WorkflowRow: React.FC<{ workflow: WorkflowListItem }> = ({ workflow }) => {
   const firstName = workflow.created_by_user?.display_name?.split(' ')[0];
+  const hasRun = !!workflow.last_execution_time;
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, minWidth: 0, py: 0.25, width: '100%' }}>
-      {/* Left: name + created */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0, flex: 1 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, minWidth: 0, flex: 1 }}>
         <Typography
           sx={{
             fontSize: 'var(--ds-text-body)',
@@ -65,69 +66,77 @@ const WorkflowRow: React.FC<{ workflow: WorkflowListItem }> = ({ workflow }) => 
         >
           {workflow.name}
         </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondaryDark, lineHeight: 1.4 }}>Created</Typography>
-          {workflow.created_at && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {firstName && (
+            <>
+              <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondaryDark, lineHeight: 1.4 }}>by {firstName}</Typography>
+              <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}>·</Typography>
+            </>
+          )}
+          {hasRun ? (
             <Datetime
               baseDate={new Date()}
-              value={workflow.created_at}
+              value={workflow.last_execution_time as string}
               sxSuffix={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}
               sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondary }}
             />
+          ) : (
+            <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}>never run</Typography>
           )}
-          {firstName && <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}>· {firstName}</Typography>}
         </Box>
       </Box>
 
-      {/* Right: last run (status chip stacked over relative time) */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.25, flexShrink: 0, whiteSpace: 'nowrap' }}>
-        {workflow.last_execution_status ? (
-          <>
-            <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiarymedium, fontStyle: 'italic' }}>Last Run</Typography>
-
-            <Box sx={{ display: 'flex' }}>
-              <CustomLabels text={workflow.last_execution_status.toLowerCase()} textTransform='capitalize' />
-              {workflow.last_execution_time && (
-                <Datetime
-                  baseDate={new Date()}
-                  value={workflow.last_execution_time}
-                  sxSuffix={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}
-                  sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondary }}
-                />
-              )}
-            </Box>
-          </>
+      <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, whiteSpace: 'nowrap' }}>
+        {hasRun ? (
+          <Datetime
+            baseDate={new Date()}
+            value={workflow.last_execution_time as string}
+            sxSuffix={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}
+            sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondary }}
+          />
         ) : (
-          <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiarymedium, fontStyle: 'italic' }}>No runs yet</Typography>
+          <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}>never run</Typography>
         )}
       </Box>
     </Box>
   );
 };
 
+const triggeredStatusDotColor = (status: string): string => {
+  const s = (status || '').toUpperCase();
+  if (s === 'COMPLETED' || s === 'SUCCESS') return ds.green[500];
+  if (s === 'RUNNING' || s === 'IN_PROGRESS' || s === 'INPROGRESS') return ds.amber[500];
+  return ds.red[500];
+};
+
 const TriggeredExecutionRow: React.FC<{ ex: TriggeredExecution }> = ({ ex }) => {
   const name = ex.workflow_name || `${ex.workflow_id.slice(0, 8)}…`;
+  const time = ex.close_time || ex.start_time;
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, minWidth: 0, py: 0.25, width: '100%' }}>
-      <Typography
-        sx={{
-          fontSize: 'var(--ds-text-body)',
-          fontWeight: 'var(--ds-font-weight-medium)',
-          color: colors.text.primary,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          flex: 1,
-        }}
-      >
-        {name}
-      </Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-        <CustomLabels text={ex.status.toLowerCase()} textTransform='capitalize' />
-        {(ex.close_time || ex.start_time) && (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, minWidth: 0, flex: 1 }}>
+        <Typography
+          sx={{
+            fontSize: 'var(--ds-text-body)',
+            fontWeight: 'var(--ds-font-weight-medium)',
+            color: colors.text.primary,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {name}
+        </Typography>
+        <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondaryDark, lineHeight: 1.4 }}>
+          triggered for this event
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, whiteSpace: 'nowrap' }}>
+        <StatusDot color={triggeredStatusDotColor(ex.status)} />
+        {time && (
           <Datetime
             baseDate={new Date()}
-            value={ex.close_time || ex.start_time || ''}
+            value={time}
             sxSuffix={{ fontSize: 'var(--ds-text-caption)', color: colors.text.tertiary }}
             sx={{ fontSize: 'var(--ds-text-caption)', color: colors.text.secondary }}
           />
@@ -147,12 +156,22 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
   const [modalOpen, setModalOpen] = useState(false);
   const [triggerLoading, setTriggerLoading] = useState(false);
 
+  // Tracks the current accountId so an in-flight fetch can detect that the
+  // caller has switched account mid-flight and drop its stale response.
+  const currentAccountIdRef = useRef<string>(accountId);
+  useEffect(() => {
+    currentAccountIdRef.current = accountId;
+  }, [accountId]);
+
   const fetchWorkflows = useCallback(async () => {
     if (!accountId) return;
+    const requestAccountId = accountId;
     setLoadState('loading');
     setErrorMessage('');
     try {
-      const response: any = await apiWorkflow.listWorkflows(accountId, 'ACTIVE', undefined, 'manual', 100);
+      const response: any = await apiWorkflow.listWorkflows(requestAccountId, 'ACTIVE', undefined, 'manual', 100);
+      // Drop the response if the active accountId changed while the request was in flight.
+      if (currentAccountIdRef.current !== requestAccountId) return;
       const apiError = parseHttpResponseBodyMessage(response);
       if (apiError) {
         setErrorMessage(apiError);
@@ -167,6 +186,7 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
       setWorkflows(manualOnly);
       setLoadState('loaded');
     } catch (err) {
+      if (currentAccountIdRef.current !== requestAccountId) return;
       console.error('Failed to load automations:', err);
       setErrorMessage('Failed to load automations');
       setLoadState('error');
@@ -174,10 +194,15 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
   }, [accountId]);
 
   // Pre-fetch on mount so the dropdown opens without a loading flicker on
-  // first click. Cheap query and the button is only mounted when the user is
-  // already in the investigation flow.
+  // first click. `automationAccountId` upstream flips from router.query →
+  // row.cloud_account_id once the event row loads; track the last fetched
+  // value in a ref so we don't repeat the call for an unchanged accountId.
+  const lastFetchedAccountIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (accountId) fetchWorkflows();
+    if (!accountId) return;
+    if (lastFetchedAccountIdRef.current === accountId) return;
+    lastFetchedAccountIdRef.current = accountId;
+    fetchWorkflows();
   }, [accountId, fetchWorkflows]);
 
   const handleSelect = (workflow: WorkflowListItem) => {
@@ -222,15 +247,16 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
     }
   };
 
-  const goToWorkflowsPage = () => {
+  const goToWorkflowsPage = useCallback(() => {
     router.push(`/auto-pilot?accountId=${accountId}#workflow`);
-  };
+  }, [router, accountId]);
 
   const goToExecution = useCallback(
     (ex: TriggeredExecution) => {
-      router.push(`/workflow/${ex.workflow_id}?accountId=${accountId}&executionId=${ex.id}#executions`);
+      const url = `/workflow/${ex.workflow_id}?accountId=${accountId}&executionId=${ex.id}#executions`;
+      window.open(url, '_blank', 'noopener,noreferrer');
     },
-    [router, accountId]
+    [accountId]
   );
 
   const validTriggered = useMemo(() => triggeredExecutions.filter((ex) => ex?.workflow_id && ex?.id), [triggeredExecutions]);
@@ -252,22 +278,11 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
   }, [validTriggered, goToExecution]);
 
   const items: DropdownMenuItem[] = useMemo(() => {
-    const runHeader: DropdownMenuItem[] = triggeredItems.length > 0 ? [{ type: 'section' as const, label: 'Run automation' }] : [];
-    const createItem: DropdownMenuItem[] = onCreateAutomation
-      ? [
-          {
-            label: 'Create automation',
-            icon: <AddIcon fontSize='small' />,
-            onSelect: onCreateAutomation,
-            id: 'run-automation-create',
-          },
-        ]
-      : [];
+    const runHeader: DropdownMenuItem[] = triggeredItems.length > 0 ? [{ type: 'section' as const, label: 'Run an automation' }] : [];
     if (loadState === 'loading') {
       return [
         ...triggeredItems,
         ...runHeader,
-        ...createItem,
         {
           label: (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -284,7 +299,6 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
       return [
         ...triggeredItems,
         ...runHeader,
-        ...createItem,
         {
           label: (
             <Typography sx={{ fontSize: 'var(--ds-text-body)', color: colors.error }}>{errorMessage || 'Failed to load automations'}</Typography>
@@ -298,7 +312,6 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
       return [
         ...triggeredItems,
         ...runHeader,
-        ...createItem,
         {
           label: <Typography sx={{ fontSize: 'var(--ds-text-body)', color: colors.text.secondaryDark }}>No automations configured</Typography>,
           disabled: true,
@@ -316,20 +329,36 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
     return [
       ...triggeredItems,
       ...runHeader,
-      ...createItem,
       ...workflows.map((w) => ({
         label: <WorkflowRow workflow={w} />,
-        icon: <SafeIcon src={manualTriggerIcon} alt='manual trigger' height={14} width={14} />,
         onSelect: () => handleSelect(w),
         id: `run-automation-item-${w.id}`,
         searchText: w.name,
       })),
     ];
-    // handleSelect / goToWorkflowsPage are stable for the lifetime of the
-    // dropdown's open state — recomputing items on each change of selected
-    // workflow would force the menu to remount and close.
+    // handleSelect is stable for the lifetime of the dropdown's open state —
+    // recomputing items on each change of selected workflow would force the
+    // menu to remount and close.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadState, workflows, errorMessage, triggeredItems, onCreateAutomation]);
+  }, [loadState, workflows, errorMessage, triggeredItems, goToWorkflowsPage]);
+
+  const headerActions = onCreateAutomation ? (
+    <Button
+      tone='primary'
+      size='sm'
+      composition='icon+text'
+      icon={<AddIcon sx={{ fontSize: 16 }} />}
+      aria-label='Create automation'
+      tooltip='Create automation'
+      data-testid='run-automation-create'
+      onClick={(e) => {
+        e.stopPropagation();
+        onCreateAutomation();
+      }}
+    >
+      Create
+    </Button>
+  ) : undefined;
 
   return (
     <>
@@ -339,11 +368,12 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, disabl
           side='bottom'
           size='sm'
           minWidth={380}
-          itemsMaxHeight='min(520px, calc(100vh - 220px))'
+          itemsMaxHeight='min(420px, calc(100vh - 260px))'
           searchable
           searchPlaceholder='Search automations…'
           onRefresh={fetchWorkflows}
           refreshLabel='Refresh list'
+          headerActions={headerActions}
           trigger={
             <Badge
               badgeContent={triggeredCount}
