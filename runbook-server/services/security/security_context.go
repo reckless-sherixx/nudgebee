@@ -76,6 +76,10 @@ type scPub struct {
 	K8sNamespaceReadOnlyAdminAccountIds []string
 	K8sNamespaces                       map[string][]string
 	IsServerInternal                    bool
+	// ScopedEntityIds is api-server's current schema for per-role account
+	// scoping. UnmarshalJSON back-populates the four legacy slices from it
+	// so HasAccountAccess keeps working for scoped roles.
+	ScopedEntityIds map[string][]string
 }
 
 func (sc *SecurityContext) MarshalJSON() ([]byte, error) {
@@ -119,6 +123,18 @@ func (sc *SecurityContext) UnmarshalJSON(data []byte) error {
 	sc.k8sNamespaceReadOnlyAdminAccountIds = scPub1.K8sNamespaceReadOnlyAdminAccountIds
 	sc.k8sNamespaces = scPub1.K8sNamespaces
 	sc.isServerInternal = scPub1.IsServerInternal
+
+	// Backcompat with api-server's current schema: ScopedEntityIds is a
+	// generic role -> []accountId map that replaced the four legacy slices
+	// above. Back-populate so HasAccountAccess sees scoped-role grants.
+	// Safe to append in both directions — api-server emits only one form at
+	// a time. Drop once runbook-server itself migrates to scopedEntityIds.
+	if scPub1.ScopedEntityIds != nil {
+		sc.accountAdminIds = append(sc.accountAdminIds, scPub1.ScopedEntityIds[AUTH_ACCOUNT_ADMIN_ROLE]...)
+		sc.accountReadOnlyAdminIds = append(sc.accountReadOnlyAdminIds, scPub1.ScopedEntityIds[AUTH_ACCOUNT_READ_ADMIN_ROLE]...)
+		sc.k8sNamespaceAdminAccountIds = append(sc.k8sNamespaceAdminAccountIds, scPub1.ScopedEntityIds[AUTH_K8S_NAMESPACE_ADMIN_ROLE]...)
+		sc.k8sNamespaceReadOnlyAdminAccountIds = append(sc.k8sNamespaceReadOnlyAdminAccountIds, scPub1.ScopedEntityIds[AUTH_K8S_NAMESPACE_READ_ADMIN_ROLE]...)
+	}
 
 	return nil
 }
