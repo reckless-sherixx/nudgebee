@@ -133,11 +133,12 @@ class MessagingPlatform(Base):
 
 
 class Integration(Base):
-    """Read-only ORM view of api-server's `integrations` table.
+    """ORM view of api-server's `integrations` table.
 
-    notifications-server reads bindings (google_chat_space + future Slack/Teams
-    rows) here on the inbound event hot path. Writes still flow through
-    api-server's `integrations_create_config` GraphQL action.
+    notifications-server reads bindings (google_chat_space, Slack, MS Teams) here,
+    and writes Slack/MS Teams installs directly (tokens encrypted via
+    security/secrets.py, byte-compatible with api-server). Other integration types
+    are still created through api-server's `integrations_create_config` action.
     """
 
     __tablename__ = "integrations"

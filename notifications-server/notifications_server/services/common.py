@@ -28,6 +28,12 @@ from notifications_server.models.models import (
 from notifications_server.utils.datetime_utils import utc_now
 from notifications_server.utils.transformer import Transformer
 from notifications_server.services.cache import Cache
+from notifications_server.services.messaging_installations import (
+    load_installation,
+    load_installation_by_team,
+    load_installations,
+    persist_messaging_token,
+)
 
 from botbuilder.core import TurnContext, BotFrameworkAdapterSettings, BotFrameworkAdapter
 from botbuilder.schema import Activity, ActivityTypes, Attachment
@@ -83,11 +89,10 @@ class CommonService:
             if platform == "google_chat":
                 return self.get_google_chat_channels(tenant)
 
-            messaging_platform = (
-                self.session.query(MessagingPlatform)
-                .filter(MessagingPlatform.tenant_id == tenant, MessagingPlatform.platform == platform)
-                .one_or_none()
-            )
+            # Slack/MS Teams may live in the integrations table (token encrypted) or
+            # the legacy messaging_platforms table; load_installations unions both.
+            installations = load_installations(self.session, tenant, platform)
+            messaging_platform = installations[0] if installations else None
             if not messaging_platform:
                 LOG.info("Unable to list channels for %s, no installation in tenant: %s ", platform, tenant)
                 return {"data": []}
@@ -141,11 +146,7 @@ class CommonService:
             if platform == "google_chat":
                 return {"data": []}
 
-            messaging_platform = (
-                self.session.query(MessagingPlatform)
-                .filter(MessagingPlatform.tenant_id == tenant, MessagingPlatform.platform == platform)
-                .one_or_none()
-            )
+            messaging_platform = load_installation(self.session, tenant, platform)
             if not messaging_platform:
                 LOG.info("Unable to list users for %s, no installation in tenant: %s", platform, tenant)
                 return {"data": []}
@@ -303,20 +304,11 @@ class CommonService:
             return {"error": {"message": f"Unexpected error: {str(e)}"}}
 
     def _get_messaging_platform(self, tenant_id, team_id, platform):
-        query = self.session.query(MessagingPlatform).filter(
-            MessagingPlatform.tenant_id == tenant_id, MessagingPlatform.platform == platform
-        )
-
-        # Only filter by team_id for Slack where the DB column stores the
-        # workspace team ID matching what callers pass.  For MS Teams the
-        # column holds the Microsoft account home_account_id, and Google Chat
-        # never sets team_id at all, so the filter only makes sense for Slack.
+        # Slack callers may target a specific workspace by team_id; MS Teams/Google
+        # Chat resolve by tenant. Unions integrations + legacy messaging_platforms.
         if team_id and platform == "slack":
-            query = query.filter(MessagingPlatform.team_id == team_id)
-
-        messaging_platform = query.one_or_none()
-
-        return messaging_platform
+            return load_installation_by_team(self.session, team_id, platform)
+        return load_installation(self.session, tenant_id, platform)
 
     def _refresh_ms_teams_token(self, messaging_platform):
         """Refresh MS Teams token if expired. Returns error string on failure, None on success."""
@@ -329,12 +321,15 @@ class CommonService:
         if "error" in response and response["error"]:
             LOG.error("Unable to refresh MS Teams token: %s", response.get("error_description", ERR_UNKNOWN))
             return ERR_TOKEN_REFRESH_FAILED
-        messaging_platform.token = response.get("access_token")
-        messaging_platform.refresh_token = response.get("refresh_token")
         expires_in = response.get("expires_in")
-        messaging_platform.token_expires_at = utc_now() + timedelta(seconds=expires_in - 100) if expires_in else None
-        self.session.add(messaging_platform)
-        self.session.commit()
+        new_expiry = utc_now() + timedelta(seconds=expires_in - 100) if expires_in else None
+        persist_messaging_token(
+            self.session,
+            messaging_platform,
+            response.get("access_token"),
+            refresh_token=response.get("refresh_token"),
+            token_expires_at=new_expiry,
+        )
         return None
 
     def _refresh_google_chat_token(self, messaging_platform):
@@ -591,11 +586,7 @@ class CommonService:
 
     def get_user_info(self, platform, team_id, user_id):
         if platform == "slack":
-            bot = (
-                self.session.query(MessagingPlatform)
-                .filter(MessagingPlatform.team_id == team_id, MessagingPlatform.platform == "slack")
-                .first()
-            )
+            bot = load_installation_by_team(self.session, team_id, "slack")
             if not bot:
                 LOG.info("Could not complete action for %s, no installation found for team: %s ", platform, team_id)
                 return None
@@ -1244,7 +1235,7 @@ class CommonService:
         return text
 
     def get_slack_installation(self, team_id):
-        return self.session.query(MessagingPlatform).filter_by(team_id=team_id, platform="slack").first()
+        return load_installation_by_team(self.session, team_id, "slack")
 
     def get_slack_user_display_name(self, team_id, user_id):
         """
@@ -1473,11 +1464,7 @@ class CommonService:
                 LOG.warning("No AAD user ID provided")
                 return None
 
-            messaging_platform = (
-                self.session.query(MessagingPlatform)
-                .filter(MessagingPlatform.team_id.contains(teams_account_id), MessagingPlatform.platform == "ms_teams")
-                .one_or_none()
-            )
+            messaging_platform = load_installation_by_team(self.session, teams_account_id, "ms_teams", contains=True)
 
             if not messaging_platform:
                 LOG.debug(f"No Teams messaging platform found for teams account {teams_account_id}")

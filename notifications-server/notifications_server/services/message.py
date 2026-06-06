@@ -34,6 +34,13 @@ from notifications_server.models.models import (
     NotificationRuleMappings,
     MessagingPlatform,
 )
+from notifications_server.services.messaging_installations import (
+    MESSAGING_PLATFORMS,
+    ORIGIN_INTEGRATION,
+    ORIGIN_LEGACY,
+    load_integration_installations_async,
+    persist_messaging_token_async,
+)
 
 LOG = logging.getLogger(__name__)
 cache = Cache()
@@ -382,9 +389,8 @@ class TeamsSender(BaseSender):
             if "error" in response and response["error"]:
                 if "AADSTS700082" in response.get("error_description", ""):
                     LOG.warning(f"Refresh token expired for installation id {ms_teams_installation.id}")
-                    ms_teams_installation.token_expires_at = None
-                    sess.add(ms_teams_installation)
-                    await sess.commit()
+                    # Clear the expiry (origin-aware) to mark the install as needing re-auth.
+                    await persist_messaging_token_async(sess, ip, ip.token, token_expires_at=None)
                     return None
                 LOG.exception(
                     f"Unable to get access token for teams due to {response.get('error_description')} for "
@@ -719,7 +725,23 @@ class MessageService:
     async def get_installed_platforms(session, **kwargs):
         filter_conditions = {key: value for key, value in kwargs.items() if value is not None}
         result = await session.execute(select(MessagingPlatform).filter_by(**filter_conditions))
-        return result.scalars().all()
+        installs = list(result.scalars().all())
+        for ip in installs:
+            ip._origin = ORIGIN_LEGACY
+        tenant_id = filter_conditions.get("tenant_id")
+        if tenant_id is None:
+            return installs
+        # Slack/MS Teams migrating to integrations: an integration install (one per
+        # tenant) wins over the legacy messaging_platforms row of the same platform.
+        requested = filter_conditions.get("platform")
+        target_platforms = [requested] if requested in MESSAGING_PLATFORMS else list(MESSAGING_PLATFORMS)
+        integration_installs = []
+        for platform in target_platforms:
+            integration_installs += await load_integration_installations_async(session, tenant_id, platform)
+        if not integration_installs:
+            return installs
+        overridden = {ip.platform for ip in integration_installs}
+        return [ip for ip in installs if ip.platform not in overridden] + integration_installs
 
     @staticmethod
     def get_channels_from_request_or_defaults(installed_platforms, matched_rules, source, kwargs):
@@ -1017,17 +1039,32 @@ class MessageService:
 
     # ----------------------------- Token + cache helpers -----------------------------
     async def commit_session_and_clear_cache(self, ip, session):
-        session.add(ip)
-        await session.commit()
+        await MessageService._persist_installation(ip, session)
         if self.cache and self.cache.redis_client:
             self.cache.delete_cached_installations(ip.tenant_id)
 
     @staticmethod
     async def commit_session_and_clear_cache_static(ip, session):
-        session.add(ip)
-        await session.commit()
+        await MessageService._persist_installation(ip, session)
         if cache and cache.redis_client:
             cache.delete_cached_installations(ip.tenant_id)
+
+    @staticmethod
+    async def _persist_installation(ip, session):
+        # Integration-origin installs re-encrypt the refreshed token into
+        # integration_config_values; legacy installs write messaging_platforms.
+        if getattr(ip, "_origin", None) == ORIGIN_INTEGRATION:
+            await persist_messaging_token_async(
+                session,
+                ip,
+                ip.token,
+                refresh_token=ip.refresh_token,
+                token_expires_at=ip.token_expires_at,
+                refresh_token_expires_at=ip.refresh_token_expires_at,
+            )
+        else:
+            session.add(ip)
+            await session.commit()
 
     # ----------------------------- Threaded Reply Methods (always generic) -----------------------------
     async def send_threaded_reply(self, tenant_id, thread, parameters):

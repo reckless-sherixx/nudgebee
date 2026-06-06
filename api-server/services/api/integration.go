@@ -63,6 +63,20 @@ func handleIntegrationApis(r *gin.Engine, tracer *trace.Tracer, meter *metric.Me
 		c.JSON(200, gin.H{"deleted": deleted})
 	})
 
+	// Internal: one-off, operator-triggered backfill of legacy messaging_platforms
+	// (Slack / MS Teams) into the encrypted integrations table. Idempotent and
+	// cross-tenant; X-ACTION-TOKEN is enforced by the global middleware. Operators
+	// POST here once after deploying the storage migration.
+	groupV2.POST("/messaging/backfill", func(c *gin.Context) {
+		result, err := core.BackfillMessagingIntegrations(logger, tracer, meter)
+		if err != nil {
+			logger.Error("integration: messaging backfill failed", "error", err)
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(200, result)
+	})
+
 	groupV2.POST("/webhook_request", func(c *gin.Context) {
 		common.MetricsApiRequestsTotal(c.Request.Context(), "integration_webhook_request")
 		payload := map[string]any{}

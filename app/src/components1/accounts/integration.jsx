@@ -704,6 +704,14 @@ const Integrations = () => {
         return;
       }
 
+      // Slack / MS Teams integration installs supersede any legacy messaging_platforms
+      // entry for the same card (one install per tenant during the storage migration).
+      if (acc.type === 'slack' || acc.type === 'ms_teams') {
+        const cardKey = acc.type === 'ms_teams' ? 'MSTEAMS' : 'SLACK';
+        map[cardKey] = [{ ...acc, status, channels: [acc.name] }];
+        return;
+      }
+
       // Special case mapping for OTel/Clickhouse naming if needed
       let key = acc.type;
       if (acc.type === 'postgresql') {
