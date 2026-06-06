@@ -45,6 +45,16 @@ def _get_message_service() -> MessageService:
 ERROR_MISSING_TENANT_HEADER = "Missing tenant header"
 ERROR_TENANT_NOT_FOUND = "Tenant id not found"
 
+# Broad-`except` rationale (applies to every endpoint below):
+# Known/user-actionable errors travel through the structured `{"error": {"message": ...}}`
+# return path from the service layer (`if "error" in result: return JSONResponse(result, ...)`).
+# Only unexpected bugs/infra failures (DB outage, library crash, etc.) reach the broad
+# `except Exception:` blocks. Exposing `str(e)` to clients there risks leaking internals
+# (DB hosts, file paths, secrets) without giving the user any actionable information.
+# `LOG.exception(...)` preserves the full traceback in server logs for debugging.
+# Distributed-trace-based correlation will be added in a follow-up that wires a
+# traceparent-aware log formatter; for now ops correlate by timestamp + endpoint.
+
 ACTION_TOKEN_HEADER = "X-ACTION-TOKEN"
 
 
@@ -95,8 +105,9 @@ async def list_channels(request: Request, body: HasuraActionPayload):
         with CommonService(engine=sync_engine, slack_app=slack_app, teams_app=teams_app) as controller:
             channels = controller.list_channels(platform, tenant)
             return JSONResponse(content=channels)
-    except Exception as e:
-        return JSONResponse({"error": {"message": "Unable to list channels", "cause": "".join(map(str, e.args))}})
+    except Exception:
+        LOG.exception("Error in list_channels endpoint")
+        return JSONResponse({"error": {"message": "Unable to list channels"}})
 
 
 @router.post("/users/list", dependencies=[Depends(verify_action_token)])
@@ -112,8 +123,9 @@ async def list_users(request: Request, body: HasuraActionPayload):
         with CommonService(engine=sync_engine, slack_app=slack_app, teams_app=teams_app) as controller:
             users = controller.list_users(platform, tenant)
             return JSONResponse(content=users)
-    except Exception as e:
-        return JSONResponse({"error": {"message": "Unable to list users", "cause": "".join(map(str, e.args))}})
+    except Exception:
+        LOG.exception("Error in list_users endpoint")
+        return JSONResponse({"error": {"message": "Unable to list users"}})
 
 
 @router.post("/channels/join", status_code=201)
@@ -167,9 +179,9 @@ async def join_channel(request: Request, payload: Dict[Any, Any], background_tas
                 return JSONResponse(result, status_code=400)
 
             return JSONResponse(content=result)
-    except Exception as e:
-        LOG.exception(f"Error in join_channel endpoint: {e}")
-        return JSONResponse({"error": {"message": "Unable to join channel", "cause": str(e)}}, status_code=500)
+    except Exception:
+        LOG.exception("Error in join_channel endpoint")
+        return JSONResponse({"error": {"message": "Unable to join channel"}}, status_code=500)
 
 
 @router.post("/channels/message", status_code=201)
@@ -213,9 +225,9 @@ async def send_channel_message(request: Request, payload: Dict[Any, Any]):
                 return JSONResponse(result, status_code=400)
 
             return JSONResponse(content=result)
-    except Exception as e:
-        LOG.exception(f"Error in send_channel_message endpoint: {e}")
-        return JSONResponse({"error": {"message": "Unable to send message", "cause": str(e)}}, status_code=500)
+    except Exception:
+        LOG.exception("Error in send_channel_message endpoint")
+        return JSONResponse({"error": {"message": "Unable to send message"}}, status_code=500)
 
 
 @router.post("/users/send", status_code=201)
@@ -265,9 +277,9 @@ async def send_direct_message(request: Request, payload: Dict[Any, Any]):
                 return JSONResponse(result, status_code=400)
 
             return JSONResponse(content=result)
-    except Exception as e:
-        LOG.exception(f"Error in send_direct_message endpoint: {e}")
-        return JSONResponse({"error": {"message": "Unable to send direct message", "cause": str(e)}}, status_code=500)
+    except Exception:
+        LOG.exception("Error in send_direct_message endpoint")
+        return JSONResponse({"error": {"message": "Unable to send direct message"}}, status_code=500)
 
 
 @router.post("/notifications/test", dependencies=[Depends(verify_action_token)])
@@ -294,9 +306,9 @@ async def send_test_notification(request: Request, body: Dict[Any, Any]):
                 team_id=team_id,
             )
             return JSONResponse(content=result)
-    except Exception as e:
-        LOG.exception("Error in send_test_notification endpoint: %s", e)
-        return JSONResponse({"success": False, "error": f"Unexpected error: {str(e)}"})
+    except Exception:
+        LOG.exception("Error in send_test_notification endpoint")
+        return JSONResponse({"success": False, "error": "Unexpected error"})
 
 
 @router.post("/integrations/google-chat/notify", dependencies=[Depends(verify_action_token)])
@@ -399,9 +411,9 @@ async def send_email(payload: Dict[Any, Any]):
                 return JSONResponse(result, status_code=400)
 
             return JSONResponse(content=result)
-    except Exception as e:
-        LOG.exception(f"Error in send_email endpoint: {e}")
-        return JSONResponse({"success": False, "error": f"Unexpected error: {str(e)}"}, status_code=500)
+    except Exception:
+        LOG.exception("Error in send_email endpoint")
+        return JSONResponse({"success": False, "error": "Unexpected error"}, status_code=500)
 
 
 @router.post("/reactions/add", status_code=201)
@@ -465,9 +477,9 @@ async def add_reaction(request: Request, payload: Dict[Any, Any]):
                 return JSONResponse(result, status_code=400)
 
             return JSONResponse(content=result)
-    except Exception as e:
-        LOG.exception(f"Error in add_reaction endpoint: {e}")
-        return JSONResponse({"success": False, "error": f"Unexpected error: {str(e)}"}, status_code=500)
+    except Exception:
+        LOG.exception("Error in add_reaction endpoint")
+        return JSONResponse({"success": False, "error": "Unexpected error"}, status_code=500)
 
 
 @router.post("/threads/messages", status_code=200, response_model=GetThreadMessagesResponse)

@@ -299,9 +299,14 @@ class CommonService:
                 "data": {"channel_id": channel_id, "session_id": session_id, "platform": platform},
             }
 
-        except Exception as e:
-            LOG.exception(f"Error joining channel: {e}")
-            return {"error": {"message": f"Unexpected error: {str(e)}"}}
+        except Exception:
+            # Known errors return via the structured paths above; this branch only
+            # fires for unhandled bugs/infra failures whose `str(e)` text can leak
+            # internals (DB hosts, file paths, credentials) without giving the
+            # user any actionable information. Server-side log keeps the
+            # traceback via LOG.exception for debugging.
+            LOG.exception("Error joining channel")
+            return {"error": {"message": "Unexpected error while joining channel"}}
 
     def _get_messaging_platform(self, tenant_id, team_id, platform):
         # Slack callers may target a specific workspace by team_id; MS Teams/Google
@@ -416,9 +421,9 @@ class CommonService:
 
                 return self._check_error_msg(error_msg, "chat:write")
 
-        except Exception as e:
-            LOG.exception(f"Error sending message to channel: {e}")
-            return {"error": {"message": f"Unexpected error: {str(e)}"}}
+        except Exception:
+            LOG.exception("Error sending message to channel")
+            return {"error": {"message": "Unexpected error while sending message"}}
 
     def send_direct_message(self, platform, tenant_id, user_id, text, team_id=None):
         try:
@@ -436,9 +441,9 @@ class CommonService:
             elif platform == "google_chat":
                 return self._send_google_chat_direct_message(messaging_platform, user_id, text, tenant_id)
 
-        except Exception as e:
-            LOG.exception(f"Error sending direct message: {e}")
-            return {"error": {"message": f"Unexpected error: {str(e)}"}}
+        except Exception:
+            LOG.exception("Error sending direct message")
+            return {"error": {"message": "Unexpected error while sending direct message"}}
 
     def _send_slack_direct_message(self, messaging_platform, user_id, text):
         try:
@@ -760,9 +765,9 @@ class CommonService:
             # This should not be reached due to validation above, but handle gracefully
             return {"success": False, "error": f"Unsupported platform: {platform}"}
 
-        except Exception as e:
-            LOG.exception("Error adding reaction on %s: %s", platform, e)
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+        except Exception:
+            LOG.exception("Error adding reaction on %s", platform)
+            return {"success": False, "error": "Unexpected error while adding reaction"}
 
     def _add_slack_reaction(self, messaging_platform, channel_id, message_id, emoji):
         """Add a reaction to a Slack message."""
@@ -876,9 +881,9 @@ class CommonService:
 
             return self._build_email_response(sent_to, errors)
 
-        except Exception as e:
-            LOG.exception("Error sending email: %s", e)
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+        except Exception:
+            LOG.exception("Error sending email")
+            return {"success": False, "error": "Unexpected error while sending email"}
 
     @staticmethod
     def _normalize_address_list(addresses):
@@ -1279,9 +1284,9 @@ class CommonService:
 
             return self._fetch_thread_messages(messaging_platform, channel_id, thread_ts)
 
-        except Exception as e:
-            LOG.exception(f"Error fetching thread messages: {e}")
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+        except Exception:
+            LOG.exception("Error fetching thread messages")
+            return {"success": False, "error": "Unexpected error while fetching thread messages"}
 
     def _fetch_thread_messages(self, messaging_platform, channel_id, thread_ts):
         """Fetch thread messages from Slack API."""
@@ -1841,9 +1846,9 @@ class CommonService:
             elif platform == "google_chat":
                 return self._send_test_google_chat(messaging_platform, channel_id, test_message, tenant_id)
 
-        except Exception as e:
-            LOG.exception("Error sending test notification on %s: %s", platform, e)
-            return {"success": False, "platform": platform, "error": f"Unexpected error: {str(e)}"}
+        except Exception:
+            LOG.exception("Error sending test notification on %s", platform)
+            return {"success": False, "platform": platform, "error": "Unexpected error while sending test notification"}
 
     def _send_test_slack(self, messaging_platform, channel_id, message):
         try:
