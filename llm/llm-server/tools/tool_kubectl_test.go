@@ -110,3 +110,103 @@ func TestKubectlUIReference(t *testing.T) {
 		})
 	}
 }
+
+func TestKubectlBlockedKind(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		// Bypasses of the old substring blocklist (`strings.Contains(" secret")`)
+		// that this tokenizer is built to catch.
+		{"slash form", "kubectl get secret/my-tls -o yaml", "secret"},
+		{"slash form plural", "kubectl get secrets/my-tls", "secrets"},
+		{"flag value between verb and kind", "kubectl get -o yaml secret my-tls", "secret"},
+		{"FQDN core group", "kubectl get secrets.v1.core", "secrets"},
+		{"FQDN bitnami sealedsecrets", "kubectl get sealedsecrets.bitnami.com/foo", "sealedsecrets"},
+		{"comma list with secrets", "kubectl get pods,secrets -A", "secrets"},
+		{"comma list secrets first", "kubectl get secrets,services", "secrets"},
+		{"namespaced describe", "kubectl describe secret my-tls -n bar", "secret"},
+
+		// Other verbs that mutate or expose secret contents.
+		{"edit", "kubectl edit secret my-tls", "secret"},
+		{"delete", "kubectl delete secret my-tls", "secret"},
+		{"patch", "kubectl patch secret my-tls -p '{}'", "secret"},
+		{"create generic", "kubectl create secret generic foo --from-literal=a=b", "secret"},
+		{"apply -f stdin", "kubectl apply -f - <<<$(cat secret.yaml)", "secret"},
+		{"scale (no-op on secrets but still blocked)", "kubectl scale secret/x --replicas=1", "secret"},
+
+		// Adjacent secret-bearing CRDs.
+		{"externalsecret singular", "kubectl get externalsecret my-es", "externalsecret"},
+		{"externalsecrets plural", "kubectl get externalsecrets -A", "externalsecrets"},
+		{"secretproviderclass", "kubectl describe secretproviderclass my-spc", "secretproviderclass"},
+		{"secretstore", "kubectl get secretstore", "secretstore"},
+		{"clustersecretstore", "kubectl get clustersecretstores", "clustersecretstores"},
+
+		// Cases that MUST NOT be blocked.
+		{"unrelated kind", "kubectl get pods -A", ""},
+		{"pod name contains 'secret' substring", "kubectl get pod secret-rotator -n bar", ""},
+		{"deployment name contains 'secrets'", "kubectl get deployment secrets-syncer", ""},
+		{"configmap (different secret-store)", "kubectl get configmap my-cm -o yaml", ""},
+		{"version subcommand", "kubectl version", ""},
+		{"cluster-info", "kubectl cluster-info", ""},
+		{"empty", "", ""},
+		{"pod-only verb (exec) ignored here", "kubectl exec mypod -- ls /var/run", ""},
+
+		// Bypass-attempt coverage.
+		{"double-quoted kind", "kubectl get \"secret\"", "secret"},
+		{"double-quoted slash form", "kubectl get \"secret/my-tls\" -o yaml", "secret"},
+		{"single-quoted kind", "kubectl get 'sealedsecret'", "sealedsecret"},
+		{"uppercase verb + mixed-case kind", "kubectl GET Secret", "secret"},
+		{"compound — get pods; get secret", "kubectl get pods && kubectl get secret", "secret"},
+		{"compound — preceding non-kubectl", "cd /tmp && kubectl get secret", "secret"},
+		// Gemini review bypasses (PR #31814).
+		{"comma list with slash forms — secrets second", "kubectl get pods/foo,secrets/bar", "secrets"},
+		{"comma list with slash forms — secret first", "kubectl get secret/a,pods/b", "secret"},
+		{"comma list mixed quoted + FQDN", "kubectl get \"pods\",sealedsecrets.bitnami.com/x", "sealedsecrets"},
+		{"semicolon glued to kind", "kubectl get secret;", "secret"},
+		{"pipe glued to kind", "kubectl get secret|grep foo", "secret"},
+		{"command substitution", "kubectl get $(echo secret)", "secret"},
+		{"backtick substitution", "kubectl get `echo secret`", "secret"},
+		{"redirect glued to kind", "kubectl get secret>/tmp/x", "secret"},
+		{"interior double-quote bypass", "kubectl get sec\"\"ret", "secret"},
+		{"interior backslash bypass", "kubectl get s\\e\\c\\r\\e\\t", "secret"},
+		{"interior single-quote bypass", "kubectl get s''e''c''r''e''t", "secret"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, kubectlBlockedKind(tc.command))
+		})
+	}
+}
+
+func TestKubectlReadsSecretFilesystemPath(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		want    bool
+	}{
+		{"exec cat service account token", "kubectl exec mypod -- cat /var/run/secrets/kubernetes.io/serviceaccount/token", true},
+		{"exec sh -c into run secrets", "kubectl exec mypod -- sh -c \"find /run/secrets -type f\"", true},
+		{"cp from secret volume", "kubectl cp mypod:/var/run/secrets/foo /tmp/x", true},
+		{"cp from kubelet pod volume", "kubectl cp mypod:/var/lib/kubelet/pods/abc/volumes/kubernetes.io~secret/x /tmp/y", true},
+		{"attach into pod reading secrets", "kubectl attach mypod -- cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt", true},
+
+		// Cases that MUST NOT trigger.
+		{"exec without secret path", "kubectl exec mypod -- ls /tmp", false},
+		{"get with secret path in name (no exec verb)", "kubectl get configmap /var/run/secrets/foo", false},
+		{"path in cluster-info dump (no relevant verb)", "kubectl cluster-info dump --output-directory=/var/run/secrets", false},
+		{"empty", "", false},
+		{"port-forward (not exec/cp/attach)", "kubectl port-forward mypod 8080:8080", false},
+		// Gemini review bypasses (PR #31814).
+		{"interior double-quote bypass in path", "kubectl exec mypod -- cat /var/run/sec\"\"rets/foo", true},
+		{"interior backslash bypass in path", "kubectl exec mypod -- cat /var/run/se\\crets/foo", true},
+		{"relative path via serviceaccount marker", "kubectl exec mypod -- sh -c \"cd /var/run && cat secrets/kubernetes.io/serviceaccount/token\"", true},
+		{"kubernetes.io serviceaccount marker on its own", "kubectl exec mypod -- cat kubernetes.io/serviceaccount/token", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, kubectlReadsSecretFilesystemPath(tc.command))
+		})
+	}
+}

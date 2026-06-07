@@ -95,6 +95,171 @@ var kubectlPodVerbs = map[string]bool{
 	"logs": true, "exec": true, "port-forward": true, "attach": true, "cp": true,
 }
 
+// kubectlBlockedResourceKinds is the set of resource kinds whose contents
+// hold credentials and must never be readable, writable, or deletable via
+// the kubectl tool — regardless of verb. The same tokenizer rules
+// kubectlResourceKind applies (slash-form `kind/name`, FQDN `kind.group`,
+// comma list `kind1,kind2`) are used to normalize incoming tokens before
+// matching this map.
+var kubectlBlockedResourceKinds = map[string]bool{
+	"secret": true, "secrets": true,
+	"sealedsecret": true, "sealedsecrets": true,
+	"externalsecret": true, "externalsecrets": true,
+	"secretproviderclass": true, "secretproviderclasses": true,
+	"clustersecretstore": true, "clustersecretstores": true,
+	"secretstore": true, "secretstores": true,
+}
+
+// kubectlBlockResourceVerbs are the subcommands we scan for a blocked
+// resource kind after. We intentionally include both read verbs
+// (get/describe/...) and mutation verbs (create/delete/edit/apply/...).
+// Pod-only verbs (exec/logs/...) are NOT included here because their
+// positional is a pod name; secret-via-mounted-filesystem reads in those
+// commands are caught by kubectlReadsSecretFilesystemPath instead.
+var kubectlBlockResourceVerbs = map[string]bool{
+	"get": true, "describe": true, "top": true, "explain": true, "wait": true,
+	"create": true, "delete": true, "edit": true, "apply": true, "replace": true,
+	"scale": true, "rollout": true, "set": true,
+	"label": true, "annotate": true, "patch": true,
+}
+
+// kubectlSecretFilesystemPatterns lists the in-pod paths where kubelet
+// mounts Service Account tokens and Secret volumes. An `exec`/`cp`/`attach`
+// that touches any of these is treated as a secret-data read regardless of
+// the kubectl-level kind. No trailing slash so we match both
+// `/run/secrets/foo` (subpath form) and `/run/secrets` (whole-dir form, as
+// in `find /run/secrets -type f`). `kubernetes.io/serviceaccount` is
+// included as defense-in-depth so relative-path traversals like
+// `cd /var/run && cat secrets/kubernetes.io/serviceaccount/token` are
+// still caught.
+var kubectlSecretFilesystemPatterns = []string{
+	"/var/run/secrets",
+	"/var/lib/kubelet/pods",
+	"/run/secrets",
+	"kubernetes.io/serviceaccount",
+}
+
+// shellQuoteStripper removes characters that the shell evaluates to
+// nothing (single/double quotes, backslashes). Without this,
+// `sec""ret`, `'secret'`, and `s\e\c\r\e\t` would bypass the
+// exact-token denylist while still being executed as `secret` by the
+// shell on the workspace pod.
+var shellQuoteStripper = strings.NewReplacer(
+	"\"", "",
+	"'", "",
+	"\\", "",
+)
+
+// shellMetacharNormalizer turns shell command-separator and
+// substitution metacharacters into spaces so they don't get glued
+// onto a kind token by Fields-based tokenization. Without this,
+// `kubectl get secret;`, `kubectl get secret|grep foo`, and
+// `kubectl get $(echo secret)` would produce tokens like `secret;`,
+// `secret|grep`, and `secret)` that fall through the exact-match
+// denylist while still being executed as `secret` by the shell.
+var shellMetacharNormalizer = strings.NewReplacer(
+	";", " ",
+	"&", " ",
+	"|", " ",
+	">", " ",
+	"<", " ",
+	"(", " ",
+	")", " ",
+	"`", " ",
+	"$", " ",
+)
+
+// kubectlBlockedKind walks a kubectl command and returns the first blocked
+// resource kind found (or "" if none). Mirrors the tokenizer rules in
+// kubectlResourceKind: positional after a known verb, scan-don't-break on
+// non-flag tokens to handle `-o yaml secret` (flag values sit between the
+// verb and the kind). Each candidate is normalized by splitting on `,`
+// FIRST (so `pods/foo,secrets/bar` correctly surfaces `secrets`), then
+// per-segment stripping `/<name>` and `.<group>`. The whole command is
+// preprocessed via shellQuoteStripper (so `"secret"` and `s\e\c\r\e\t`
+// match) and shellMetacharNormalizer (so `secret;`, `secret|grep`, and
+// `$(echo secret)` produce isolated `secret` tokens).
+//
+// Known limitation: we don't track which short flags take a value, so a
+// pod named exactly `secret` / `secrets` in `kubectl get pod secret` is
+// falsely blocked. Pod names that *contain* `secret` as a substring
+// (`secret-rotator`, `my-secret-pod`) are NOT falsely blocked because the
+// match is exact-token against the denylist map.
+func kubectlBlockedKind(command string) string {
+	cmd := strings.TrimSpace(command)
+	cmd = strings.TrimPrefix(cmd, "kubectl")
+	cmd = shellQuoteStripper.Replace(cmd)
+	cmd = shellMetacharNormalizer.Replace(cmd)
+	tokens := strings.Fields(cmd)
+
+	for i, tok := range tokens {
+		if strings.HasPrefix(tok, "-") {
+			continue
+		}
+		verb := strings.ToLower(tok)
+		if !kubectlBlockResourceVerbs[verb] {
+			continue
+		}
+		for j := i + 1; j < len(tokens); j++ {
+			next := tokens[j]
+			if strings.HasPrefix(next, "-") {
+				continue
+			}
+			// Split on `,` FIRST so a list like `pods/foo,secrets/bar`
+			// is processed segment-by-segment — otherwise the `/`
+			// strip on the whole token would discard everything after
+			// the first `/` and miss `secrets/bar`.
+			for _, segment := range strings.Split(next, ",") {
+				segment = strings.SplitN(segment, "/", 2)[0]
+				segment = strings.SplitN(segment, ".", 2)[0]
+				if kubectlBlockedResourceKinds[strings.ToLower(segment)] {
+					return strings.ToLower(segment)
+				}
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
+// kubectlReadsSecretFilesystemPath returns true if the command uses a
+// pod-filesystem verb (exec / cp / attach) and references one of the
+// well-known kubelet-mounted secret paths. Catches commands like
+//
+//	kubectl exec mypod -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
+//	kubectl cp mypod:/var/run/secrets/foo /tmp/x
+//	kubectl exec mypod -- sh -c "find /run/secrets -type f"
+//
+// The substring check on the path is necessary because the part of the
+// command after `--` is an arbitrary shell command, not kubectl args.
+// shellQuoteStripper is applied first so `/var/run/sec""rets` or
+// `/var/run/se\crets` (which the shell evaluates to `/var/run/secrets`)
+// can't bypass the literal substring check.
+func kubectlReadsSecretFilesystemPath(command string) bool {
+	cmd := shellQuoteStripper.Replace(command)
+	tokens := strings.Fields(strings.TrimPrefix(strings.TrimSpace(cmd), "kubectl"))
+	hasFilesystemVerb := false
+	for _, tok := range tokens {
+		if strings.HasPrefix(tok, "-") {
+			continue
+		}
+		verb := strings.ToLower(tok)
+		if verb == "exec" || verb == "cp" || verb == "attach" {
+			hasFilesystemVerb = true
+			break
+		}
+	}
+	if !hasFilesystemVerb {
+		return false
+	}
+	for _, pat := range kubectlSecretFilesystemPatterns {
+		if strings.Contains(cmd, pat) {
+			return true
+		}
+	}
+	return false
+}
+
 // kubectlResourceKind inspects a kubectl command string and returns the
 // canonical UI resource kind it targets (one of pods, services, namespaces,
 // pvc, pv, nodes). Returns "" when the kind cannot be determined or maps to a
@@ -281,8 +446,19 @@ func (m KubectlExecuteTool) Call(nbRequestContext core.NbToolContext, input core
 	}
 
 	command1 := strings.ToLower(command)
-	if strings.Contains(command1, " secret") || strings.Contains(command1, " secrets") {
-		return core.NBToolResponse{}, errors.New("kubectl: access to secrets is blocked")
+	// Block secret-bearing resource kinds. Uses a shell-aware tokenizer
+	// (kubectlBlockedKind) instead of a substring check so that
+	// `kubectl get secret/my-tls -o yaml`, `kubectl get -o yaml secret X`,
+	// `kubectl get secrets.v1.core`, `kubectl get pods,secrets`, and
+	// `kubectl get sealedsecrets.bitnami.com/foo` are all caught.
+	if blocked := kubectlBlockedKind(command); blocked != "" {
+		return core.NBToolResponse{}, fmt.Errorf("kubectl: access to %q is blocked. Secret-bearing kinds (secrets, sealedsecrets, externalsecrets, secretstores, secretproviderclasses) are not readable via this tool", blocked)
+	}
+	// Block exec/cp/attach reads from well-known secret mount paths so
+	// `kubectl exec mypod -- cat /var/run/secrets/...` can't bypass the
+	// kind-level check above.
+	if kubectlReadsSecretFilesystemPath(command) {
+		return core.NBToolResponse{}, errors.New("kubectl: reading mounted secret filesystem paths (/var/run/secrets, /var/lib/kubelet/pods, /run/secrets) via exec/cp/attach is blocked")
 	}
 
 	// Safety net: auto-inject --tail for kubectl logs if not already limited
