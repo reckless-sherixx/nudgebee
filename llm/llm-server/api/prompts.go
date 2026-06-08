@@ -14,9 +14,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// adminAuthMiddleware validates admin token from request header
+// adminAuthMiddleware validates admin token from request header.
+//
+// Matches the lenient stance of the global gate in cmd/main.go: when
+// LLM_SERVER_TOKEN is unset (empty), the token is treated as optional and
+// every request is allowed through. When LLM_SERVER_TOKEN is configured,
+// the request header must match exactly — missing or wrong values are
+// rejected with 401.
 func adminAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if config.Config.LlmServerToken == "" {
+			c.Next()
+			return
+		}
+
 		token := c.GetHeader(config.Config.LlmServerTokenHeader)
 		if token == "" {
 			c.JSON(401, gin.H{"error": "Missing authentication token"})
