@@ -797,6 +797,9 @@ function buildEventFilterParams(query: any) {
       filterParams['aggregation_key'] = { _eq: query['aggregation_key'] };
     }
   }
+  if (Array.isArray(query?.aggregation_key_nin) && query['aggregation_key_nin'].length) {
+    filterParams['aggregation_key'] = { ...(filterParams['aggregation_key'] || {}), _not_in: query['aggregation_key_nin'] };
+  }
   if (query['fingerprint'] && Array.isArray(query['fingerprint'])) {
     filterParams['fingerprint'] = { _in: query['fingerprint'] };
   } else if (query['fingerprint']) {
@@ -1821,6 +1824,7 @@ query list_k8_issues_count {
       subject_owner?: string | string[];
       finding_type?: string;
       aggregation_key?: string | Array<string>;
+      aggregation_key_nin?: string[];
       priority?: string;
       priority_nin?: string[];
       status?: string;
@@ -1947,6 +1951,9 @@ query list_k8_issues_count {
         filterParams['aggregation_key'] = { _in: query['aggregation_key'] };
       } else if (query?.['aggregation_key'] && typeof query['aggregation_key'] === 'string') {
         filterParams['aggregation_key'] = { _eq: query['aggregation_key'] };
+      }
+      if (Array.isArray(query?.['aggregation_key_nin']) && query['aggregation_key_nin'].length) {
+        filterParams['aggregation_key'] = { ...(filterParams['aggregation_key'] || {}), _not_in: query['aggregation_key_nin'] };
       }
       if (query?.['priority']) {
         filterParams['priority'] = { _eq: query['priority'] };

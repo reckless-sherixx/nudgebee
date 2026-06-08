@@ -1,6 +1,13 @@
 import type { NextRouter } from 'next/router';
 import { v5 } from 'uuid';
 
+// Event aggregation_keys that are excluded from the Troubleshoot dashboard
+// (widgets + lists) only. These are low-signal records (e.g. K8s config-change
+// audit entries) that the backend still triages, but which we do not want
+// inflating the dashboard's triage KPIs or cluttering its lists. This is a
+// frontend display filter — it does NOT change backend triaging.
+export const EXCLUDED_TRIAGE_AGGREGATION_KEYS = ['ConfigurationChange/KubernetesResource/Change'];
+
 /**
  * Returns the most recent `updated_at` (raw value) across a set of recommendation
  * rows — i.e. the real "last refreshed" time of the data, regardless of which
