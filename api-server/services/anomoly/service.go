@@ -809,92 +809,124 @@ func GenerateAnomalyEvent(dbms *database.DatabaseManager, anomaly *Anomaly) erro
 }
 
 func collectEvidences(anomaly *Anomaly) ([]any, error) {
-	evidences := make([]any, 5)
 	// anomaly to map
 	anomalyMap, err := common.MarshalStructToMap(anomaly)
 	if err != nil {
 		slog.Error("anomaly: unable to convert struct to map", "error", err)
 		return nil, err
 	}
-	evidences = append(evidences, anomalyMap)
 
 	// start time is 30 min before the evaluated time
 	startTime := anomaly.EvaluatedAt.Add(-60 * time.Minute)
 	endTime := *anomaly.EvaluatedAt
 
-	// Step 2: Collect workload metrics (memory, cpu, latency, cpu_throttling)
-	for _, metricName := range []string{"memory", "cpu", "latency", "cpu_throttling"} {
-		ev, err := relay.WorkloadMetricsExecutor(
-			anomaly.AccountId,
-			anomaly.Name,
-			anomaly.Namespace,
-			metricName,
-			startTime,
-			endTime,
-		)
-		if err != nil {
-			slog.Error("anomaly: error getting workload ", "error", err, "metric", metricName, "workload", anomaly.Name, "namespace", anomaly.Namespace)
-			continue
-		}
-		res, err := relay.FormatEvidenceResponseFromAgent(fmt.Sprintf("%s Metric", strings.ToTitle(strings.ReplaceAll(metricName, "_", " "))), ev)
-		if err != nil {
-			slog.Error("anomaly: error formatting evidence response", "metric", metricName, "error", err)
-			continue
-		}
-		evidences = append(evidences, res)
+	// Each downstream call (4 workload metrics + service map + traces) is an
+	// independent relay HTTP round-trip. Fan them out via errgroup and write into
+	// fixed slots so the final order matches the previous sequential ordering.
+	// Concurrent writes to distinct slice indices are safe; no mutex needed.
+	metricNames := []string{"memory", "cpu", "latency", "cpu_throttling"}
+	slots := make([]any, 1+len(metricNames)+2) // anomaly + metrics + serviceMap + traces
+	slots[0] = anomalyMap
+	slotServiceMap := 1 + len(metricNames)
+	slotTraces := slotServiceMap + 1
+
+	var g errgroup.Group
+
+	// Workload metrics (memory, cpu, latency, cpu_throttling)
+	for i, metricName := range metricNames {
+		i, metricName := i, metricName
+		g.Go(func() error {
+			ev, err := relay.WorkloadMetricsExecutor(
+				anomaly.AccountId,
+				anomaly.Name,
+				anomaly.Namespace,
+				metricName,
+				startTime,
+				endTime,
+			)
+			if err != nil {
+				slog.Error("anomaly: error getting workload ", "error", err, "metric", metricName, "workload", anomaly.Name, "namespace", anomaly.Namespace)
+				return nil
+			}
+			res, err := relay.FormatEvidenceResponseFromAgent(fmt.Sprintf("%s Metric", strings.ToTitle(strings.ReplaceAll(metricName, "_", " "))), ev)
+			if err != nil {
+				slog.Error("anomaly: error formatting evidence response", "metric", metricName, "error", err)
+				return nil
+			}
+			slots[1+i] = res
+			return nil
+		})
 	}
 
-	// get service map
-	healthCheckParams := map[string]any{
-		"workload_filter": map[string]string{
-			"workload_name":      anomaly.Name,
-			"workload_namespace": anomaly.Namespace,
-		},
-		"r_start_time": startTime.UTC().Format("2006-01-02T15:04:05.000000Z"),
-		"r_end_time":   endTime.UTC().Format("2006-01-02T15:04:05.000000Z"),
-	}
-	evidence, err := relay.PodActionExecutor(anomaly.AccountId, anomaly.Name, anomaly.Namespace, relay.ServiceMapActionName, healthCheckParams)
-	if err == nil {
+	// Service map
+	g.Go(func() error {
+		healthCheckParams := map[string]any{
+			"workload_filter": map[string]string{
+				"workload_name":      anomaly.Name,
+				"workload_namespace": anomaly.Namespace,
+			},
+			"r_start_time": startTime.UTC().Format("2006-01-02T15:04:05.000000Z"),
+			"r_end_time":   endTime.UTC().Format("2006-01-02T15:04:05.000000Z"),
+		}
+		evidence, err := relay.PodActionExecutor(anomaly.AccountId, anomaly.Name, anomaly.Namespace, relay.ServiceMapActionName, healthCheckParams)
+		if err != nil {
+			slog.Error("anomaly: error getting service map at anomaly", "error", err)
+			return nil
+		}
 		res, err := relay.FormatEvidenceResponseFromAgent("Service Map", evidence)
 		if err != nil {
 			slog.Error("anomaly: error formatting service map at anomaly evidence", "error", err)
-		} else {
-			insight, err := common.CheckNeighboringWorkloadHealth(res, map[string]string{
-				"WorkloadName": anomaly.Name,
-				"Namespace":    anomaly.Namespace,
-			})
-			if err != nil {
-				slog.Error("anomaly: error checking neighboring workload health at anomaly", "error", err)
-			} else if len(insight) > 0 {
-				res["insight"] = insight
-			}
-			res["type"] = relay.ServiceMapActionName
-			res["start_time"] = startTime.UTC().Format("2006-01-02T15:04:05.000000Z")
-			res["end_time"] = endTime.UTC().Format("2006-01-02T15:04:05.000000Z")
-			res["workload_name"] = anomaly.Name
-			res["workload_namespace"] = anomaly.Namespace
-			evidences = append(evidences, res)
+			return nil
 		}
-	} else {
-		slog.Error("anomaly: error getting service map at anomaly", "error", err)
-	}
-
-	// get workload traces
-	evidence, err = relay.PodActionExecutor(anomaly.AccountId, anomaly.Name, anomaly.Namespace, relay.WorkloadTracesEnricherActionName, map[string]any{
-		"destination_workload_name":      anomaly.Name,
-		"destination_workload_namespace": anomaly.Namespace,
-		"duration_minutes":               60,
+		insight, err := common.CheckNeighboringWorkloadHealth(res, map[string]string{
+			"WorkloadName": anomaly.Name,
+			"Namespace":    anomaly.Namespace,
+		})
+		if err != nil {
+			slog.Error("anomaly: error checking neighboring workload health at anomaly", "error", err)
+		} else if len(insight) > 0 {
+			res["insight"] = insight
+		}
+		res["type"] = relay.ServiceMapActionName
+		res["start_time"] = startTime.UTC().Format("2006-01-02T15:04:05.000000Z")
+		res["end_time"] = endTime.UTC().Format("2006-01-02T15:04:05.000000Z")
+		res["workload_name"] = anomaly.Name
+		res["workload_namespace"] = anomaly.Namespace
+		slots[slotServiceMap] = res
+		return nil
 	})
-	if err == nil {
+
+	// Workload traces — only call whose relay-level failure aborts collectEvidences,
+	// matching the original sequential behavior.
+	g.Go(func() error {
+		evidence, err := relay.PodActionExecutor(anomaly.AccountId, anomaly.Name, anomaly.Namespace, relay.WorkloadTracesEnricherActionName, map[string]any{
+			"destination_workload_name":      anomaly.Name,
+			"destination_workload_namespace": anomaly.Namespace,
+			"duration_minutes":               60,
+		})
+		if err != nil {
+			slog.Error("anomaly: error getting workload traces at anomaly", "error", err)
+			return err
+		}
 		res, err := relay.FormatEvidenceResponseFromAgent("Workload Traces", evidence)
 		if err != nil {
 			slog.Error("anomaly: error formatting evidence response in anomaly at traces", "error", err)
-		} else {
-			evidences = append(evidences, res)
+			return nil
 		}
-	} else {
-		slog.Error("anomaly: error getting workload traces at anomaly", "error", err)
+		slots[slotTraces] = res
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	// Compact: drop slots that weren't filled (failed sub-calls).
+	evidences := make([]any, 0, len(slots))
+	for _, s := range slots {
+		if s != nil {
+			evidences = append(evidences, s)
+		}
 	}
 	return evidences, nil
 }
