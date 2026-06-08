@@ -1,6 +1,7 @@
 package recommendation
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -226,13 +227,46 @@ const spotEligibleWorkloadsQuery = `select cr2.cloud_account_id::varchar , cr2.c
 // job pods ran on non-spot nodes, deduped to one row per CronJob. Job pods are
 // resolved to their owning CronJob via the workload's job_data.parents; one-off
 // Jobs with no CronJob parent are excluded. Bind param $1 is the cloud account id.
-const spotEligibleCronJobQuery = `WITH pod_info AS ( SELECT cr.tenant_id, cr.cloud_account_id, cr.meta -> 'config' -> 'labels' ->> 'job-name' AS job_name, cr.meta ->> 'namespace'::text AS namespace, cr.meta ->>'node'::text AS node, cr.last_seen, cr2.meta -> 'job_data' -> 'parents' -> 0 ->> 'name' AS cronjob_name, cr2.meta -> 'job_data' -> 'parents' -> 0 ->> 'kind' AS parent_kind FROM k8s_pods cr LEFT JOIN k8s_workloads cr2 ON cr2."name" = cr.meta -> 'config' -> 'labels' ->> 'job-name' AND cr2.meta ->> 'namespace' = cr.meta ->> 'namespace' AND cr2.tenant_id = cr.tenant_id AND cr2.cloud_account_id = cr.cloud_account_id where cr.meta -> 'config' -> 'labels' ->> 'job-name' is not null and cr.cloud_account_id = $1 ) SELECT pod_info.cronjob_name as controller_name, pod_info.namespace, 0 AS estimated_saving, pod_info.cloud_account_id, pod_info.tenant_id, max(cj.cloud_resource_id::text) AS resource_id, 'CronJob' AS type FROM pod_info INNER JOIN k8s_nodes intnc ON intnc.tenant_id = pod_info.tenant_id AND intnc.cloud_account_id = pod_info.cloud_account_id AND pod_info.node = intnc.name INNER JOIN k8s_workloads cj ON cj."name" = pod_info.cronjob_name AND cj.meta ->> 'namespace' = pod_info.namespace AND cj.tenant_id = pod_info.tenant_id AND cj.cloud_account_id = pod_info.cloud_account_id AND cj.kind = 'CronJob' WHERE pod_info.cronjob_name IS NOT NULL AND pod_info.parent_kind = 'CronJob' AND pod_info.last_seen > NOW() - INTERVAL '7 day' AND lower(case when (intnc.meta -> 'node_info' -> 'labels' ->> 'karpenter.sh/capacity-type'::text) is not null then intnc.meta -> 'node_info' -> 'labels' ->> 'karpenter.sh/capacity-type'::text when (intnc.meta -> 'node_info' -> 'labels' ->> 'eks.amazonaws.com/capacityType'::text) is not null then intnc.meta -> 'node_info' -> 'labels' ->> 'eks.amazonaws.com/capacityType'::text else 'on-demand'::text end) != 'spot' GROUP BY pod_info.cronjob_name, pod_info.namespace, pod_info.cloud_account_id, pod_info.tenant_id`
+//
+// pod_info is MATERIALIZED on purpose (load-bearing). Every join predicate in the
+// CTE is a jsonb extraction (meta->>'namespace', ->'config'->'labels'->>'job-name',
+// ->'job_data'->'parents'->0->>'name'), so the planner cannot estimate selectivity
+// and assumes rows=1 at each join. Inlined, it flattens pod_info into the outer
+// query and probes k8s_pods *last* via an index whose only bindable prefix is
+// tenant_id -- re-scanning the entire tenant's pods (300k+) once per surviving
+// outer row. On the largest account that degraded to a 17h runaway that pinned a
+// CPU core. MATERIALIZED forces pod_info to build once with a concrete row count
+// (account-scoped pod scan), after which the downstream joins are bounded index
+// probes. Measured 17h -> ~7s cold / sub-second warm on the worst account, same
+// rows returned. Same fix shape as the image-scanner running_images CTE.
+const spotEligibleCronJobQuery = `WITH pod_info AS MATERIALIZED ( SELECT cr.tenant_id, cr.cloud_account_id, cr.meta -> 'config' -> 'labels' ->> 'job-name' AS job_name, cr.meta ->> 'namespace'::text AS namespace, cr.meta ->>'node'::text AS node, cr.last_seen, cr2.meta -> 'job_data' -> 'parents' -> 0 ->> 'name' AS cronjob_name, cr2.meta -> 'job_data' -> 'parents' -> 0 ->> 'kind' AS parent_kind FROM k8s_pods cr LEFT JOIN k8s_workloads cr2 ON cr2."name" = cr.meta -> 'config' -> 'labels' ->> 'job-name' AND cr2.meta ->> 'namespace' = cr.meta ->> 'namespace' AND cr2.tenant_id = cr.tenant_id AND cr2.cloud_account_id = cr.cloud_account_id where cr.meta -> 'config' -> 'labels' ->> 'job-name' is not null and cr.cloud_account_id = $1 ) SELECT pod_info.cronjob_name as controller_name, pod_info.namespace, 0 AS estimated_saving, pod_info.cloud_account_id, pod_info.tenant_id, max(cj.cloud_resource_id::text) AS resource_id, 'CronJob' AS type FROM pod_info INNER JOIN k8s_nodes intnc ON intnc.tenant_id = pod_info.tenant_id AND intnc.cloud_account_id = pod_info.cloud_account_id AND pod_info.node = intnc.name INNER JOIN k8s_workloads cj ON cj."name" = pod_info.cronjob_name AND cj.meta ->> 'namespace' = pod_info.namespace AND cj.tenant_id = pod_info.tenant_id AND cj.cloud_account_id = pod_info.cloud_account_id AND cj.kind = 'CronJob' WHERE pod_info.cronjob_name IS NOT NULL AND pod_info.parent_kind = 'CronJob' AND pod_info.last_seen > NOW() - INTERVAL '7 day' AND lower(case when (intnc.meta -> 'node_info' -> 'labels' ->> 'karpenter.sh/capacity-type'::text) is not null then intnc.meta -> 'node_info' -> 'labels' ->> 'karpenter.sh/capacity-type'::text when (intnc.meta -> 'node_info' -> 'labels' ->> 'eks.amazonaws.com/capacityType'::text) is not null then intnc.meta -> 'node_info' -> 'labels' ->> 'eks.amazonaws.com/capacityType'::text else 'on-demand'::text end) != 'spot' GROUP BY pod_info.cronjob_name, pod_info.namespace, pod_info.cloud_account_id, pod_info.tenant_id`
 
-// querySpotRecommendations runs a spot-candidate query and scans each row into
-// the loose map form the recommendation upsert expects. It accepts any
-// sqlx.Queryer so production can pass *sqlx.DB and tests can pass a *sqlx.Tx.
-func querySpotRecommendations(q sqlx.Queryer, query, accountId string) ([]map[string]any, error) {
-	rows, err := q.Queryx(query, accountId)
+// spotRecommendationQueryTimeout caps a single per-account spot-candidate query.
+// These queries join k8s_pods/k8s_workloads/k8s_nodes on jsonb-extracted keys, so
+// the planner's selectivity estimates can be badly wrong on outlier accounts; a
+// bounded context deadline (which the driver turns into a server-side cancel) is a
+// belt-and-suspenders guard so a single pathological plan can never again pin a CPU
+// core for hours. Comfortably above the worst observed healthy runtime (~7s cold).
+const spotRecommendationQueryTimeout = 5 * time.Minute
+
+// querySpotRecommendations runs a spot-candidate query and scans each row into the
+// loose map form the recommendation upsert expects. The query runs under a bounded
+// context deadline (spotRecommendationQueryTimeout) so a runaway plan is cancelled
+// rather than left to burn CPU; ctx is the parent so caller cancellation still
+// propagates. q is sqlx.QueryerContext so production can pass *sqlx.DB and tests can
+// pass a *sqlx.Tx.
+func querySpotRecommendations(ctx context.Context, q sqlx.QueryerContext, query, accountId string) ([]map[string]any, error) {
+	// Fail fast on an empty account id. cloud_account_id is a uuid column so an empty
+	// bind would error at parse rather than full-scan, but guarding here gives a clear
+	// caller-side error and avoids a pointless round-trip.
+	if accountId == "" {
+		return nil, errors.New("querySpotRecommendations: accountId must not be empty")
+	}
+
+	queryCtx, cancel := context.WithTimeout(ctx, spotRecommendationQueryTimeout)
+	defer cancel()
+
+	rows, err := q.QueryxContext(queryCtx, query, accountId)
 	if err != nil {
 		return nil, err
 	}
@@ -249,12 +283,12 @@ func querySpotRecommendations(q sqlx.Queryer, query, accountId string) ([]map[st
 	return results, rows.Err()
 }
 
-func getSpotEligibleWorkloads(q sqlx.Queryer, accountId string) ([]map[string]any, error) {
-	return querySpotRecommendations(q, spotEligibleWorkloadsQuery, accountId)
+func getSpotEligibleWorkloads(ctx context.Context, q sqlx.QueryerContext, accountId string) ([]map[string]any, error) {
+	return querySpotRecommendations(ctx, q, spotEligibleWorkloadsQuery, accountId)
 }
 
-func getSpotEligibleCronJobs(q sqlx.Queryer, accountId string) ([]map[string]any, error) {
-	return querySpotRecommendations(q, spotEligibleCronJobQuery, accountId)
+func getSpotEligibleCronJobs(ctx context.Context, q sqlx.QueryerContext, accountId string) ([]map[string]any, error) {
+	return querySpotRecommendations(ctx, q, spotEligibleCronJobQuery, accountId)
 }
 
 func processSpotInstanceRecommendations(ctx *security.RequestContext, accountId string, dbms *database.DatabaseManager) error {
@@ -278,13 +312,13 @@ func processSpotInstanceRecommendations(ctx *security.RequestContext, accountId 
 		return err
 	}
 
-	eligiblePods, err := getSpotEligibleWorkloads(dbms.Db, accountId)
+	eligiblePods, err := getSpotEligibleWorkloads(ctx.GetContext(), dbms.Db, accountId)
 	if err != nil {
 		ctx.GetLogger().Error("error getting spot instance recommendations for pods", "error", err)
 		return err
 	}
 
-	eligibleJobs, err := getSpotEligibleCronJobs(dbms.Db, accountId)
+	eligibleJobs, err := getSpotEligibleCronJobs(ctx.GetContext(), dbms.Db, accountId)
 	if err != nil {
 		ctx.GetLogger().Error("error getting spot instance recommendations for jobs", "error", err)
 		return err

@@ -16,6 +16,7 @@
 package recommendation
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -194,11 +195,11 @@ func TestSpotRecommendationScenarios(t *testing.T) {
 	seedJobPod(t, tx, "old-cron-1-pod", "old-cron-1", "default", "node-od", "Completed", time.Now().Add(-10*24*time.Hour))
 
 	// --- run the exact eligibility queries --------------------------------
-	workloads, err := getSpotEligibleWorkloads(tx, testAccount)
+	workloads, err := getSpotEligibleWorkloads(context.Background(), tx, testAccount)
 	if err != nil {
 		t.Fatalf("getSpotEligibleWorkloads: %v", err)
 	}
-	cronjobs, err := getSpotEligibleCronJobs(tx, testAccount)
+	cronjobs, err := getSpotEligibleCronJobs(context.Background(), tx, testAccount)
 	if err != nil {
 		t.Fatalf("getSpotEligibleCronJobs: %v", err)
 	}
