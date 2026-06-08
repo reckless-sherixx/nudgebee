@@ -54,17 +54,13 @@ func (t *LLMInvestigateTask) Execute(taskCtx types.TaskContext, params map[strin
 	}
 
 	requestContext := taskCtx.GetNewRequestContext()
-	resp, err := llm.ProcessRequest(requestContext, llm.LLMRequest{
+	resp, err := llm.ProcessRequest(requestContext, applyWorkflowTrace(taskCtx, llm.LLMRequest{
 		Message:      msg,
 		AccountId:    taskCtx.GetAccountID(),
-		SessionId:    taskCtx.GetWorkflowRunID(),
 		Tools:        tools,
 		LlmProvider:  modelProvider,
 		LlmModelName: modelName,
-		// Forward the workflow definition id so a PR raised by the code agent
-		// can link back to this workflow (/workflow/<id>).
-		WorkflowId: taskCtx.GetWorkflowID(),
-	})
+	}))
 
 	if err != nil {
 		return nil, err
