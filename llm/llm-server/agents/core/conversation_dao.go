@@ -1841,6 +1841,9 @@ func (chat *ConversationDao) GetConversationToolCallChildAgentId(conversationId,
 }
 
 func (chat *ConversationDao) LoadConversationMessages(accountID, conversationID, userID string, requestType MessageType, k int) ([]map[string]string, error) {
+	if _, err := uuid.Parse(conversationID); err != nil {
+		return nil, nil
+	}
 	var rows *sqlx.Rows
 	var err error
 	var args []interface{}
