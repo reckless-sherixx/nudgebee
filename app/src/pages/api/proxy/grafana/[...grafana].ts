@@ -92,6 +92,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return;
       }
     }
+
+    // Grafana embeds a full query/explore surface, so restrict it to users with
+    // write access on the target cluster — read-only roles are blocked. Mirrors
+    // hasWriteAccess() on the client (and the hidden Grafana tab). Enforced only
+    // when role info is available (session/cookie path); the bearer-token path
+    // is left unchanged.
+    if (userRoles !== null) {
+      const grafanaSegment = Array.isArray(grafana) ? grafana[0] : grafana;
+      const targetAccountId = typeof grafanaSegment === 'string' ? grafanaSegment.replace(/^gr-/, '') : '';
+      const canAccessGrafana =
+        userRoles.includes('tenant_admin') ||
+        (!userRoles.includes('tenant_admin_readonly') && !!targetAccountId && userWriteAccountIds.includes(targetAccountId));
+      if (!canAccessGrafana) {
+        res.status(403).json({
+          error: 'forbidden',
+          description: 'Read-only users do not have access to Grafana',
+        });
+        return;
+      }
+    }
     const relayEndpoint = process.env.RELAY_SERVER_ENDPOINT ?? 'http://localhost:52832';
     const secretKey = process.env.RELAY_SERVER_SECRET_KEY ?? '';
 

@@ -23,7 +23,7 @@ interface NDialogProps {
   submitTone?: ButtonTone;
   sx?: React.CSSProperties;
   /** Override the dialog content padding/styles inline. e.g. `{ padding: 0 }` for edge-to-edge content. */
-  contentSx?: object;
+  contentSx?: React.CSSProperties;
   backdropClickClose?: boolean;
   width?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 }

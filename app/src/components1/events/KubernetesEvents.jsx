@@ -1228,7 +1228,7 @@ const KubernetesEventsTable = ({
         const chartLabels = [];
         const chartColors = [];
         seriesByAccount.forEach((series, accountId) => {
-          const account = accounts.find((acc) => (acc.id || acc.value) === accountId);
+          const account = accounts?.find((acc) => (acc?.id || acc?.value) === accountId);
           chartLabels.push(account?.label || account?.account_name || accountId);
           chartColors.push(TREND_SERIES_COLORS[data.length % TREND_SERIES_COLORS.length]);
           data.push(series);
