@@ -41,6 +41,8 @@ import { hasWriteAccess } from '@lib/auth';
 import SafeIcon from '@components1/common/SafeIcon';
 import { getNubiIconUrl, useTenantBranding } from '@hooks/useTenantBranding';
 import SavingsPlanEvidence from '@components1/optimise-new/evidence/SavingsPlanEvidence';
+import CommandExecutionHistory from '@components1/cloudaccount/CommandExecutionHistory';
+import ApplyMitigationModal from '@components1/cloudaccount/ApplyMitigationModal';
 
 type CanonicalSeverityLevel = 'critical' | 'high' | 'medium' | 'low' | 'info';
 const toCanonicalSeverityLevel = (severity: string | undefined): CanonicalSeverityLevel => {
@@ -164,7 +166,7 @@ const CloudOptimizeRecommendationsTable = (props: {
   const [nubiAccountId, setNubiAccountId] = useState('');
   const [nubiConversationId, setNubiConversationId] = useState('');
   const { page, rowsPerPage, changePage, setPage } = usePagination(10);
-  const { allCluster } = useData();
+  const { allCluster, selectedCluster } = useData();
   const currencySymbol = useCurrencySymbol(selectedAccountId);
   const [serviceNamesFilterWithRuleName, setServiceNamesFilterWithRuleName] = useState([] as { label: string; value: string }[]);
 
@@ -793,9 +795,32 @@ const CloudOptimizeRecommendationsTable = (props: {
                       hasWriteAccess(row?.account_id) &&
                       isActionableStatus;
                     const isApplying = applyingRecommendationId === row?.id;
-                    return optimizeMitigation(_option, drilldownQuery, canApplyAlarm, isApplying, () => handleApplyAlarmRecommendation(row));
+                    const resolvedProvider = props.provider || (selectedCluster as any)?.cloud_provider || '';
+                    const canExecuteCommand =
+                      props.accountAccess !== 'readonly' &&
+                      hasWriteAccess(row?.account_id) &&
+                      isActionableStatus &&
+                      ['aws', 'azure', 'gcp'].includes(resolvedProvider.toLowerCase());
+                    return (
+                      <OptimizeMitigation
+                        drilldownQuery={drilldownQuery}
+                        canApplyAlarm={canApplyAlarm}
+                        isApplying={isApplying}
+                        onApply={() => handleApplyAlarmRecommendation(row)}
+                        canExecuteCommand={canExecuteCommand}
+                        accountId={row?.account_id ?? selectedAccountId}
+                        recommendationId={row?.id}
+                      />
+                    );
                   },
                   text: 'Mitigation',
+                },
+                {
+                  text: 'Audit History',
+                  componentFn: function (_opt: any, drilldownQuery: any) {
+                    const row = drilldownQuery?.recommendation;
+                    return <CommandExecutionHistory accountId={row?.account_id ?? props?.accountId ?? ''} recommendationId={row?.id ?? ''} />;
+                  },
                 },
               ],
             }}
@@ -897,11 +922,31 @@ function optimizeDescription(_accountId: any, drilldownQuery: any) {
   );
 }
 
-function optimizeMitigation(_accountId: any, drilldownQuery: any, canApplyAlarm = false, isApplying = false, onApply?: () => void) {
+function OptimizeMitigation({
+  drilldownQuery,
+  canApplyAlarm = false,
+  isApplying = false,
+  onApply,
+  canExecuteCommand = false,
+  accountId,
+  recommendationId,
+}: {
+  drilldownQuery: any;
+  canApplyAlarm?: boolean;
+  isApplying?: boolean;
+  onApply?: () => void;
+  canExecuteCommand?: boolean;
+  accountId?: string;
+  recommendationId?: string;
+}) {
   const mitigations = interpolateMitigations(drilldownQuery?.recommenedationDetails?.mitigations, drilldownQuery?.recommendation);
   const markdowns = mitigations?.length ? mitigations.join('\n\n') : null;
+
   return (
     <Box sx={{ background: ds.background[100], borderRadius: ds.radius.md, p: ds.space[2] }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 'var(--ds-space-2)' }}>
+        <ApplyMitigationModal markdowns={markdowns} accountId={accountId} recommendationId={recommendationId} canExecute={canExecuteCommand} />
+      </Box>
       {markdowns ? (
         <MarkDowns data={markdowns} sx={{ padding: 0, '& p:last-child': { marginBottom: 0 } }} allowExecutable={false} onLinkClick={null} />
       ) : (

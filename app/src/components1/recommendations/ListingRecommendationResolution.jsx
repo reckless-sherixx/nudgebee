@@ -17,6 +17,7 @@ import CustomTable2 from '@common-new/tables/CustomTable2';
 import FilterDropdown from '@components1/ds/FilterDropdown';
 import { SeverityIcon } from '@components1/ds/SeverityIcon';
 import DownloadButton from '@common-new/DownloadButton';
+import CommandExecutionHistory from '@components1/cloudaccount/CommandExecutionHistory';
 
 const SEVERITY_LEVELS = new Set(['critical', 'high', 'medium', 'low', 'info']);
 const toSeverityLevel = (s) => {
@@ -254,6 +255,9 @@ const ListingRecommendationResolution = ({ accountId }) => {
                 drilldownQuery: {
                   recommendation: rr,
                   message: rr.status_message,
+                  recommendationId: rr.recommendation_id,
+                  typeReferenceId: rr.type_reference_id,
+                  resolutionId: rr.id,
                 },
               },
               {
@@ -384,6 +388,16 @@ const ListingRecommendationResolution = ({ accountId }) => {
               {
                 text: 'Details',
                 componentFn: (_option, drilldownQuery) => {
+                  if (drilldownQuery?.typeReferenceId === 'cli_execution' && drilldownQuery?.recommendationId) {
+                    return (
+                      <CommandExecutionHistory
+                        accountId={accountId}
+                        recommendationId={drilldownQuery.recommendationId}
+                        resolutionId={drilldownQuery.resolutionId}
+                      />
+                    );
+                  }
+
                   const raw = drilldownQuery?.recommendation?.data?.data;
                   let parsed = raw;
                   if (typeof raw === 'string') {

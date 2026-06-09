@@ -1,21 +1,9 @@
-import {
-  Box,
-  Typography,
-  Tabs,
-  Tab,
-  Divider,
-  Drawer,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  CircularProgress,
-} from '@mui/material';
+import { Box, Typography, Tabs, Tab, Divider, Drawer } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import LinkIcon from '@mui/icons-material/Link';
 import { useState, useEffect } from 'react';
+import { usePagination } from '@hooks/usePagination';
+import CustomTable2 from '@shared/tables/CustomTable2';
 import { ds } from 'src/utils/colors';
 import { Label, type LabelTone } from '@components1/ds/Label';
 import { Button } from '@components1/ds/Button';
@@ -26,6 +14,7 @@ import ActionBar from './ActionBar';
 import Currency from '@components1/common/format/Currency';
 import recommendationApi from '@api1/recommendation';
 import { daysSinceLong, getResourceDisplayName } from './utils';
+import CommandExecutionHistory from '@components1/cloudaccount/CommandExecutionHistory';
 
 // Severity → DS Label tone (mirrors the summary list mapping).
 const SEVERITY_TONE: Record<string, LabelTone> = {
@@ -47,7 +36,7 @@ interface RecommendationDetailPanelProps {
   open: boolean;
   onClose: () => void;
   recommendation: any;
-  accounts?: Record<string, { name: string; cloud_provider: string }>;
+  accounts?: Record<string, { name: string; cloud_provider: string; account_access?: string }>;
   initialTab?: number;
   onCreateTicket?: (rec: any) => void;
   onResolve?: (rec: any) => void;
@@ -67,109 +56,115 @@ const formatDateShort = (dateStr: string | null) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-/** Inline Resolution History — lightweight table that fits the drawer */
+const RESOLUTION_HEADERS = [
+  { name: 'Type', width: '20%' },
+  { name: 'Reference', width: '25%' },
+  { name: 'Resolver', width: '15%' },
+  { name: 'Status', width: '15%' },
+  { name: 'Updated', width: '25%' },
+];
+
+/** Inline Resolution History — paginated table that fits the drawer */
 const InlineResolutionHistory = ({ recommendationId }: { recommendationId: string }) => {
   const [resolutions, setResolutions] = useState<any[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { page, rowsPerPage, changePage } = usePagination(5);
 
   useEffect(() => {
     if (!recommendationId) return;
     setLoading(true);
     recommendationApi
-      .listRecommendationResolution(recommendationId, 10, 0)
+      .listRecommendationResolution(recommendationId, rowsPerPage, page * rowsPerPage)
       .then((res: any) => {
         setResolutions(res?.data?.recommendation_resolution || []);
+        setTotalCount(res?.data?.recommendation_resolution_aggregate?.aggregate?.count || 0);
       })
-      .catch(() => setResolutions([]))
+      .catch(() => {
+        setResolutions([]);
+        setTotalCount(0);
+      })
       .finally(() => setLoading(false));
-  }, [recommendationId]);
+  }, [recommendationId, page, rowsPerPage]);
 
-  if (loading) {
+  if (!loading && resolutions.length === 0) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: '20px' }}>
-        <CircularProgress size={20} />
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          py: ds.space[3],
+          borderRadius: ds.radius.lg,
+          border: `1px solid ${ds.gray[200]}`,
+          backgroundColor: ds.background[100],
+        }}
+      >
+        <Typography sx={{ fontSize: ds.text.body, color: ds.gray[600] }}>No resolution history found.</Typography>
       </Box>
     );
   }
 
-  if (!resolutions || resolutions.length === 0) {
-    return (
-      <Typography sx={{ fontSize: ds.text.small, color: ds.gray[500], fontStyle: 'italic', py: ds.space[2] }}>
-        No resolution history found.
-      </Typography>
-    );
-  }
+  const tableData = resolutions.map((r: any) => {
+    const isLink = r.type_reference_id && (r.type_reference_id.startsWith('http') || r.type_reference_id.startsWith('/'));
+    return [
+      {
+        component: <Typography sx={{ fontSize: ds.text.caption, color: ds.gray[700] }}>{r.type || '—'}</Typography>,
+      },
+      {
+        component: isLink ? (
+          <Box
+            component='a'
+            href={r.type_reference_id}
+            target='_blank'
+            rel='noopener'
+            sx={{ fontSize: ds.text.caption, color: ds.blue[600], display: 'flex', alignItems: 'center', gap: ds.space[0] }}
+          >
+            <LinkIcon sx={{ fontSize: ds.text.caption }} />
+            Link
+          </Box>
+        ) : (
+          <Typography
+            sx={{
+              fontSize: ds.text.caption,
+              color: ds.gray[700],
+              maxWidth: ds.space.mul(1, 25),
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {r.type_reference_id || '—'}
+          </Typography>
+        ),
+      },
+      {
+        component: <Typography sx={{ fontSize: ds.text.caption, color: ds.gray[700] }}>{r.resolver_type || '—'}</Typography>,
+      },
+      {
+        component: (
+          <Label size='sm' tone={resolutionTone(r.status)}>
+            {r.status || '—'}
+          </Label>
+        ),
+      },
+      {
+        component: <Typography sx={{ fontSize: ds.text.caption, color: ds.gray[500] }}>{formatDateShort(r.updated_at)}</Typography>,
+      },
+    ];
+  });
 
   return (
-    <TableContainer
-      sx={{
-        borderRadius: ds.radius.lg,
-        border: `1px solid ${ds.gray[200]}`,
-        '& .MuiTableCell-root': { px: ds.space[2], py: '6px', fontSize: ds.text.caption, borderColor: ds.gray[200] },
-      }}
-    >
-      <Table size='small'>
-        <TableHead>
-          <TableRow sx={{ backgroundColor: ds.blue[100] }}>
-            <TableCell sx={{ fontWeight: ds.weight.semibold, color: ds.gray[700] }}>Type</TableCell>
-            <TableCell sx={{ fontWeight: ds.weight.semibold, color: ds.gray[700] }}>Reference</TableCell>
-            <TableCell sx={{ fontWeight: ds.weight.semibold, color: ds.gray[700] }}>Resolver</TableCell>
-            <TableCell sx={{ fontWeight: ds.weight.semibold, color: ds.gray[700] }}>Status</TableCell>
-            <TableCell sx={{ fontWeight: ds.weight.semibold, color: ds.gray[700] }}>Updated</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {resolutions.map((r: any, idx: number) => {
-            const isLink = r.type_reference_id && (r.type_reference_id.startsWith('http') || r.type_reference_id.startsWith('/'));
-            return (
-              <TableRow key={r.type_reference_id || r.type || `resolution-${idx}`} sx={{ '&:last-child td': { borderBottom: 'none' } }}>
-                <TableCell>
-                  <Typography sx={{ fontSize: ds.text.caption, color: ds.gray[700] }}>{r.type || '—'}</Typography>
-                </TableCell>
-                <TableCell>
-                  {isLink ? (
-                    <Box
-                      component='a'
-                      href={r.type_reference_id}
-                      target='_blank'
-                      rel='noopener'
-                      sx={{ fontSize: ds.text.caption, color: ds.blue[600], display: 'flex', alignItems: 'center', gap: ds.space[0] }}
-                    >
-                      <LinkIcon sx={{ fontSize: '12px' }} />
-                      Link
-                    </Box>
-                  ) : (
-                    <Typography
-                      sx={{
-                        fontSize: ds.text.caption,
-                        color: ds.gray[700],
-                        maxWidth: '100px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {r.type_reference_id || '—'}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Typography sx={{ fontSize: ds.text.caption, color: ds.gray[700] }}>{r.resolver_type || '—'}</Typography>
-                </TableCell>
-                <TableCell>
-                  <Label size='sm' tone={resolutionTone(r.status)}>
-                    {r.status || '—'}
-                  </Label>
-                </TableCell>
-                <TableCell>
-                  <Typography sx={{ fontSize: ds.text.caption, color: ds.gray[500] }}>{formatDateShort(r.updated_at)}</Typography>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <CustomTable2
+      id={`resolution-history-${recommendationId}`}
+      headers={RESOLUTION_HEADERS}
+      tableData={tableData}
+      rowsPerPage={rowsPerPage}
+      onPageChange={changePage}
+      totalRows={totalCount}
+      loading={loading}
+      pageNumber={page + 1}
+    />
   );
 };
 
@@ -414,6 +409,17 @@ const RecommendationDetailPanel = ({
                   Resolution History
                 </Typography>
                 <InlineResolutionHistory recommendationId={rec.id} />
+              </>
+            )}
+
+            {/* Command Execution History — CLI runs tied to this recommendation */}
+            {rec.id && rec.account_id && (
+              <>
+                <Divider sx={{ my: ds.space[4] }} />
+                <Typography sx={{ fontSize: ds.text.body, fontWeight: ds.weight.semibold, color: ds.gray[700], mb: ds.space[2] }}>
+                  Command Execution History
+                </Typography>
+                <CommandExecutionHistory accountId={rec.account_id} recommendationId={rec.id} />
               </>
             )}
           </Box>
