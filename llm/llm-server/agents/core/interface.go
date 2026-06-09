@@ -347,18 +347,25 @@ type NBAgent interface {
 // NBAgentCategoryProvider is an optional interface that lets an agent declare
 // its model category (ModelTier). executeAgent stamps the category onto the
 // request context so the agent's LLM calls resolve the category-specific
-// model. An agent that does not implement it resolves through the normal flow.
+// model. An agent that does not implement it defaults to the Retrieval tier
+// (see agentModelCategory).
 type NBAgentCategoryProvider interface {
 	GetModelCategory() ModelTier
 }
 
-// agentModelCategory returns the category an agent opted into, or an empty
-// tier when it declared none (→ normal resolution flow).
+// agentModelCategory returns the category an agent opted into, or the default
+// Retrieval tier when it declared none. Retrieval is the fleet floor: most
+// agents are read/query tools, so defaulting to Retrieval keeps them untagged
+// while still routing them off the (expensive) global model. Agents that need
+// a different tier opt in explicitly — Summary (analysis/extract) or Reasoning
+// (orchestrators). Global is no longer a per-agent routing target; it remains
+// the inherited base/fallback every tier resolves to when its own model is
+// unconfigured.
 func agentModelCategory(agent NBAgent) ModelTier {
 	if p, ok := agent.(NBAgentCategoryProvider); ok {
 		return p.GetModelCategory()
 	}
-	return ""
+	return ModelTierRetrieval
 }
 
 // NBAgentCacheScopeProvider is an optional interface that allows agents to define

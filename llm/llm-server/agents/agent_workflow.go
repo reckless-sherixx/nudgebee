@@ -209,3 +209,7 @@ func (a WorkflowAgent) GetSupportedTools(ctx *security.RequestContext) []toolcor
 func (a WorkflowAgent) GetPlannerType() core.AgentPlannerType {
 	return core.AgentPlannerTypeReAct
 }
+
+func (a WorkflowAgent) GetModelCategory() core.ModelTier {
+	return core.ModelTierReasoning
+}

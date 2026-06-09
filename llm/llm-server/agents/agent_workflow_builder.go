@@ -133,6 +133,10 @@ func (a *WorkflowBuilderAgent) GetPlannerType() core.AgentPlannerType {
 	return core.AgentPlannerTypeCustom
 }
 
+func (a *WorkflowBuilderAgent) GetModelCategory() core.ModelTier {
+	return core.ModelTierReasoning
+}
+
 func (a *WorkflowBuilderAgent) PostProcessResponse(ctx *security.RequestContext, request core.NBAgentRequest, resp core.NBAgentResponse) core.NBAgentResponse {
 	if len(resp.Response) > 0 {
 		content := resp.Response[0]

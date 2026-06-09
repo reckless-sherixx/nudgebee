@@ -244,3 +244,7 @@ func (r RemediationAgent) GetSummaryToolName() string {
 	// without automatically finishing after each tool call
 	return ""
 }
+
+func (r RemediationAgent) GetModelCategory() core.ModelTier {
+	return core.ModelTierReasoning
+}

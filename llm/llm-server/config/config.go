@@ -265,6 +265,11 @@ type appConfig struct {
 	// LlmServerLlmInitialBackoffSeconds defines the starting delay for exponential backoff during LLM retries.
 	LlmServerLlmInitialBackoffSeconds int `mapstructure:"llm_server_llm_initial_backoff_seconds"`
 
+	// LlmHFEnableThinking controls whether HF/vLLM OpenAI-compat requests opt out of chat-template
+	// thinking mode. Default false (we send chat_template_kwargs.enable_thinking=false). Set true
+	// only when a vLLM-served thinking model is intentionally used for reasoning-tier work.
+	LlmHFEnableThinking bool `mapstructure:"llm_hf_enable_thinking"`
+
 	LlmServerMaxConcurrentLlmCalls int `mapstructure:"llm_server_max_concurrent_llm_calls"`
 
 	SecurityContextRetryAttempts int `mapstructure:"security_context_retry_attempts"`
@@ -644,6 +649,7 @@ func init() {
 	viper.SetDefault("llm_server_llm_retry_attempts", 5)
 	viper.SetDefault("llm_server_max_concurrent_llm_calls", 20)
 	viper.SetDefault("llm_server_llm_initial_backoff_seconds", 1)
+	viper.SetDefault("llm_hf_enable_thinking", false)
 	viper.SetDefault("llm_server_relay_command_execution_timeout_seconds", 120)
 	viper.SetDefault("llm_server_relay_pod_execution_timeout_seconds", 120)
 	viper.SetDefault("llm_server_mcp_discovery_timeout_seconds", 15)
