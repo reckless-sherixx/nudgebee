@@ -215,7 +215,7 @@ func fetchAllocation(ctx *security.RequestContext, client *http.Client, accountI
 		q.Set("step", step)
 	}
 	q.Set("aggregate", aggregate)
-	endpoint := config.Config.OpencostServerUrl + "/allocation/compute?" + q.Encode()
+	endpoint := config.Config.CostServerUrl + "/allocation/compute?" + q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx.GetContext(), http.MethodGet, endpoint, nil)
 	if err != nil {

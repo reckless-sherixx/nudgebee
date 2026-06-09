@@ -120,10 +120,12 @@ type appConfig struct {
 	CloudCollectorServerUrl         string `mapstructure:"cloud_collector_server_url"`
 	CloudCollectorServerTokenHeader string `mapstructure:"cloud_collector_server_token_header"`
 
-	// K8s-collector (spend ingestion) + central OpenCost, used by the OpenCost
-	// spend-sync cron to drive per-cluster allocation → spends server-side.
+	// K8s-collector (spend ingestion) + cost-server (allocation compute), used by
+	// the OpenCost spend-sync cron. cost-server is the standalone nudgebee cost
+	// engine (collector-server/cost-server) the cron HTTP-calls per cluster,
+	// keyed by X-Scope-OrgID = cloud account id.
 	K8sCollectorServerUrl string `mapstructure:"k8s_collector_server_url"`
-	OpencostServerUrl     string `mapstructure:"opencost_server_url"`
+	CostServerUrl         string `mapstructure:"cost_server_url"`
 
 	LLMServerEndpoint    string `mapstructure:"llm_server_endpoint"`
 	LLMServerToken       string `mapstructure:"llm_server_token"`
@@ -306,7 +308,7 @@ func init() {
 	viper.SetDefault("cloud_collector_server_token_header", "X-ACTION-TOKEN")
 
 	viper.SetDefault("k8s_collector_server_url", "http://k8s-collector:80")
-	viper.SetDefault("opencost_server_url", "http://opencost:9003")
+	viper.SetDefault("cost_server_url", "http://cost-server:9003")
 
 	viper.SetDefault("llm_server_endpoint", "http://llm-server:8000")
 	viper.SetDefault("llm_server_token", "")
