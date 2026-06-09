@@ -2096,6 +2096,10 @@ Make minimal, precise changes only.`,
 				"provider":  "github",
 				"org":       gitDetail.Org,
 				"repo":      gitDetail.Repo,
+				// tenant_id lets the pr_lifecycle followup cron scope the run.
+				// recommendation_resolution has no tenant column, so the cron's
+				// fallback reads it from here (with a recommendation join as backstop).
+				"tenant_id": ctx.GetSecurityContext().GetTenantId(),
 			}
 			if branchName, ok := agentResponse["branch"].(string); ok {
 				prMeta["pr_branch"] = branchName
@@ -2371,6 +2375,10 @@ When creating the PR, ensure the description includes:
 				"provider":  "github",
 				"org":       gitDetail.Org,
 				"repo":      gitDetail.Repo,
+				// tenant_id lets the pr_lifecycle followup cron scope the run.
+				// recommendation_resolution has no tenant column, so the cron's
+				// fallback reads it from here (with a recommendation join as backstop).
+				"tenant_id": ctx.GetSecurityContext().GetTenantId(),
 			}
 			if branchName, ok := agentResponse["branch"].(string); ok {
 				prMeta["pr_branch"] = branchName
