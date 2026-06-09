@@ -342,7 +342,7 @@ const EventResolutions = () => {
     },
     {
       type: 'dropdown',
-      options: ['AutoPilot', 'Manual', 'System'].map((r) => ({ label: snakeToTitleCase(r), value: r })),
+      options: ['AutoPilot', 'Manual', 'System', 'User'].map((r) => ({ label: snakeToTitleCase(r), value: r })),
       onSelect: (e) => {
         setSelectedResolver(e.target.value);
         setCurrentPage(0);
