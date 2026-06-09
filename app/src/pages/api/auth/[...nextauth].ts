@@ -797,12 +797,18 @@ if (process.env.NEXTAUTH_DUMMY_CREDS_ENABLED == 'true') {
           throw Error('Invalid Username');
         }
         const normalizedUsername = credentials.username.toLowerCase();
+        // Refuse to authenticate when the configured password is empty or
+        // still the .env.example placeholder — otherwise a fresh `cp
+        // .env.example .env` would silently authenticate anyone typing the
+        // literal `__REPLACE__…` string. Distinct error so the operator
+        // knows what to fix (vs the generic "Invalid Password").
         const configured = process.env.NEXTAUTH_DUMMY_CREDS_PASSWORD || '';
         if (!configured || configured.startsWith('__REPLACE__')) {
           throw Error(
             'Dummy creds password is not configured. Set NEXTAUTH_DUMMY_CREDS_PASSWORD in app/.env (openssl rand -base64 16) before signing in.'
           );
         }
+        // Constant-time compare to defeat timing oracles.
         const pwdBuf = Buffer.from(credentials?.password ?? '');
         const expectedBuf = Buffer.from(configured);
         if (pwdBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(pwdBuf, expectedBuf)) {
