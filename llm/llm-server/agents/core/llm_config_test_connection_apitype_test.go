@@ -30,7 +30,7 @@ func TestEnumerateProbeTargets_PerTierAPITypeSurvives(t *testing.T) {
 		"llm_tier_provider_summary":          "huggingface",
 		"llm_tier_model_summary":             "Qwen/Qwen3.6-35B-A3B-FP8",
 		"llm_tier_api_key_summary":           "hf_FAKE_SUMMARY_KEY",
-		"llm_tier_api_endpoint_summary":      "https://ebmsmkn7o66gpayt.us-east-2.aws.endpoints.huggingface.cloud",
+		"llm_tier_api_endpoint_summary":      "https://example-endpoint.us-east-2.aws.endpoints.huggingface.cloud",
 		"llm_tier_api_type_summary":          "openai",
 		"llm_tier_model_fallbacks_summary":   "",
 	}
@@ -52,7 +52,7 @@ func TestEnumerateProbeTargets_PerTierAPITypeSurvives(t *testing.T) {
 	assert.Equal(t, "openai", hf.cfg[cfgKeyAPIType],
 		"summary tier api_type must reach the HF probe target")
 	assert.Equal(t,
-		"https://ebmsmkn7o66gpayt.us-east-2.aws.endpoints.huggingface.cloud",
+		"https://example-endpoint.us-east-2.aws.endpoints.huggingface.cloud",
 		hf.cfg[cfgKeyAPIEndpoint], "summary tier endpoint must reach the HF target")
 	assert.NotEmpty(t, hf.cfg[cfgKeyAPIKey], "summary tier api_key must reach the HF target")
 }
