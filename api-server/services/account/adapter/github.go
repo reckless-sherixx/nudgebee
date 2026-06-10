@@ -1886,6 +1886,46 @@ func extractNumberFromURL(link string) (string, error) {
 	return matches[1], nil
 }
 
+// formatRequestedValuesForPrompt returns a copy of the per-container requested
+// values with memory request/limit rendered as Kubernetes quantity strings
+// (e.g. 341725388 -> "326Mi") instead of raw bytes. The recommendation pipeline
+// carries memory as a byte count, but the Helm values file (and therefore the
+// "Before" column the agent emits) uses unit-suffixed quantities. Passing raw
+// bytes made the agent write a value like "341725388" next to an existing
+// "500Mi", producing inconsistent units in both the file and the PR table. CPU
+// is left untouched — it is already a valid core quantity (e.g. 0.101).
+func formatRequestedValuesForPrompt(data map[string]any) map[string]any {
+	out := make(map[string]any, len(data))
+	for key, value := range data {
+		container, ok := value.(map[string]any)
+		if !ok {
+			out[key] = value
+			continue
+		}
+		formattedContainer := make(map[string]any, len(container))
+		for resourceName, resourceValue := range container {
+			fields, ok := resourceValue.(map[string]any)
+			if !ok {
+				formattedContainer[resourceName] = resourceValue
+				continue
+			}
+			formattedFields := make(map[string]any, len(fields))
+			for field, fieldValue := range fields {
+				if resourceName == "memory" {
+					if n, ok := fieldValue.(float64); ok {
+						formattedFields[field] = applyMemoryUnit(n)
+						continue
+					}
+				}
+				formattedFields[field] = fieldValue
+			}
+			formattedContainer[resourceName] = formattedFields
+		}
+		out[key] = formattedContainer
+	}
+	return out
+}
+
 func ApplyRightsizingRecommendationUsingCodeAgent(ctx AccountAdapterContext, request ApplyRecommendationRequest, gitDetail gitDetailFromDeployment, recommendResolutionId string) error {
 	// Run asynchronously to avoid blocking the request
 	go func() {
@@ -1939,7 +1979,7 @@ func ApplyRightsizingRecommendationUsingCodeAgent(ctx AccountAdapterContext, req
 		// Build structured prompt with clear instructions
 		// Using @agent_code_2 to invoke the code agent
 		recommendationJSON, _ := common.MarshalJson(request.Recommendation)
-		requestDataJSON, _ := common.MarshalJson(request.Data)
+		requestDataJSON, _ := common.MarshalJson(formatRequestedValuesForPrompt(request.Data))
 
 		queryText := fmt.Sprintf(`Please apply the following Kubernetes resource rightsizing recommendations.
 
