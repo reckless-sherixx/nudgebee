@@ -47,7 +47,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 const TracesTabComponent = ({ drilldownQuery, accountId }) => {
-  const plusMinusDuration = formatDateForPlusMinusDuration(drilldownQuery.updatedAt, 5040);
+  const plusMinusDuration = formatDateForPlusMinusDuration(new Date(drilldownQuery.updatedAt).getTime(), 5040);
 
   return (
     <KubernetesTracesListing
