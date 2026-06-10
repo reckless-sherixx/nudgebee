@@ -1098,6 +1098,11 @@ class MessageService:
         if platform == PlatformTypes.MS_TEAMS.value and not team_id:
             return [failed_response(platform, reason="team_id is required for MS Teams threaded replies")]
 
+        # Fail fast on an empty tenant_id: get_installed_platforms drops None filters,
+        # so a missing tenant would run an unscoped cross-tenant query.
+        if not tenant_id:
+            return [failed_response(platform, reason="Tenant ID is required")]
+
         try:
             async with BaseDB.async_session(self.engine)() as session:
                 installs = await self.get_installed_platforms(session, tenant_id=tenant_id, platform=platform)
