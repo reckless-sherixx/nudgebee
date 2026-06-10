@@ -556,7 +556,7 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
           name: 'Severity',
           width: '10%',
           info: "Severity is the original urgency level assigned by the source monitoring/alerting system, based on that tool's built-in rules or your configured thresholds",
-          infoPlacement: 'top-start',
+          infoPlacement: 'top',
         },
         {
           name: 'Application',
@@ -596,7 +596,7 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
           name: 'Severity',
           width: '12%',
           info: "Severity is the original urgency level assigned by the source monitoring/alerting system, based on that tool's built-in rules or your configured thresholds",
-          infoPlacement: 'top-start',
+          infoPlacement: 'top',
         },
         {
           name: 'Event Type',

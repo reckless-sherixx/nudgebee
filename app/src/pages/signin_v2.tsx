@@ -797,6 +797,7 @@ export default function SignInV2({ providers, samlEnabled, tier }: any) {
                 textTransform: 'none',
                 flex: '1 1 calc(50% - 6px)',
                 minWidth: '120px',
+                minHeight: '64px',
                 boxSizing: 'border-box',
                 '&:hover': {
                   backgroundColor: 'white',
@@ -932,7 +933,7 @@ export default function SignInV2({ providers, samlEnabled, tier }: any) {
       )}
 
       {/* Divider before Credentials */}
-      {(ldapProvider || teleportProvider || emailProvider) && credentialsProvider && (
+      {(otherIconProviders.length > 0 || samlEnabled || ldapProvider || teleportProvider || emailProvider) && credentialsProvider && (
         <Box sx={{ my: 3 }}>
           <Divider
             sx={{ color: colors.text.tertiarymedium, fontSize: '12px', '&::before, &::after': { borderColor: colors.border.nudgebeeSuggestion } }}

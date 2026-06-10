@@ -93,7 +93,7 @@ const DEFAULT_TABLE_COLUMNS = [
     align: 'center',
     defaultVisible: true,
     info: "Severity is the original urgency level assigned by the source monitoring/alerting system, based on that tool's built-in rules or your configured thresholds",
-    infoPlacement: 'top-start',
+    infoPlacement: 'top',
   },
   {
     name: 'Application',
@@ -324,7 +324,7 @@ const KubernetesEventsTable = ({
         width: '9%',
         align: 'center',
         info: "Severity is the original urgency level assigned by the source monitoring/alerting system, based on that tool's built-in rules or your configured thresholds",
-        infoPlacement: 'top-start',
+        infoPlacement: 'top',
       },
       {
         name: 'Application',

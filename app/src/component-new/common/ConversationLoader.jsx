@@ -171,7 +171,7 @@ const ConversationLoader = () => {
             fontFamily: 'var(--ds-font-display)',
             fontSize: 'var(--ds-text-body)',
             fontWeight: 'var(--ds-font-weight-medium)',
-            lineHeight: 1,
+            lineHeight: 1.5,
             background: 'linear-gradient(90deg, var(--ds-brand-600), var(--ds-brand-400), var(--ds-brand-600))',
             backgroundSize: '200% 100%',
             backgroundClip: 'text',

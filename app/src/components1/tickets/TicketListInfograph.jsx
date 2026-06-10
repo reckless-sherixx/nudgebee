@@ -234,7 +234,7 @@ const TicketListInfoGraph = ({ defaultQuery = {}, selectedStatus, selectedPriori
           />
           <Box display='flex' flexDirection='column'>
             <Typography variant='span' sx={{ color: ds.gray[700], fontSize: 'var(--ds-text-title)', fontWeight: 'var(--ds-font-weight-medium)' }}>
-              Total <br /> Tickets
+              Total Tickets
             </Typography>
             <Box sx={{ display: 'flex', gap: 'var(--ds-space-2)', mt: ds.space[1] }}>
               <Typography sx={{ fontSize: 'var(--ds-text-caption)', color: ds.blue[500], fontWeight: 'var(--ds-font-weight-medium)' }}>
