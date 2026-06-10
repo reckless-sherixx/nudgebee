@@ -219,6 +219,11 @@ type retryContext struct {
 	hasMalformedFunctionCall bool           // Sticky flag: set when Gemini returns MALFORMED_FUNCTION_CALL, never cleared during retries
 	lastTTFTMs               *int64         // Wall-clock ms from call start → first streamed chunk (last attempt)
 	lastWasStreaming         bool           // Whether the last attempt actually streamed (≥1 chunk seen)
+	// resolution is the per-request tier-aware LLM config resolution (carries
+	// Tier + dbConfig). Stored so downstream calls — notably the cache-path
+	// getLLMApiKey — resolve the SAME tier-specific key as the client-build
+	// path, instead of dropping the tier and falling back to the global key.
+	resolution *LLMConfigResolution
 }
 
 func GetLLMNumTokensFromStringMessages(context *security.RequestContext, messages []string, provider string, model string) (numTokens int) {
@@ -398,6 +403,9 @@ func GenerateAndTrackLLMContent(ctx *security.RequestContext, userId string, acc
 			totalStart:       t0, // Budget tracks from initial start
 			maxTotalDuration: time.Duration(config.Config.LlmServerGlobalRetryBudgetMinutes) * time.Minute,
 			enableCaching:    config.Config.LlmEnableCaching && !disableCachingCont,
+			// Carry the tier-aware resolution so the cache-path getLLMApiKey in
+			// tryWithModel resolves the same tier-specific key as the main call.
+			resolution: res,
 		}
 
 		const maxContinuations = 3
@@ -899,7 +907,7 @@ func tryWithModel(rc *retryContext) (*llms.ContentResponse, error) {
 
 		cacheManager := GetCacheManager()
 		appendAgentName := rc.agentName != ""
-		apiKey := getLLMApiKey(rc.accountId, rc.currentProvider, rc.agentName, appendAgentName)
+		apiKey := getLLMApiKey(rc.accountId, rc.currentProvider, rc.agentName, appendAgentName, rc.resolution)
 
 		// Pull tenant_id from security context so the lifecycle row gets the right
 		// tenant scoping for budget rollups. Best-effort — caller-context loss here
@@ -1121,8 +1129,8 @@ func tryFallbackModel(rc *retryContext, nextModel string, attempt int) (*llms.Co
 		"nextModel", nextModel,
 		"attempt", attempt+1)
 
-	provider := GetLLMProvider(rc.ctx, rc.accountId, rc.agentName, false, rc.conversationId)
-	newLLM, err := GetLLMModel(provider, nextModel, rc.agentName, false, rc.accountId)
+	provider := GetLLMProvider(rc.ctx, rc.accountId, rc.agentName, false, rc.conversationId, rc.resolution)
+	newLLM, err := GetLLMModel(provider, nextModel, rc.agentName, false, rc.accountId, rc.resolution)
 	if err != nil {
 		rc.ctx.GetLogger().Warn("Failed to create fallback model",
 			"model", nextModel,
@@ -1628,7 +1636,7 @@ func handleQuotaError(rc *retryContext, fallbackModels []string, recordPrimaryHi
 		// Analyze failure reason
 		if isQuotaError(err) {
 			// Record rate limit hit for the fallback model too
-			fallbackProvider := GetLLMProvider(rc.ctx, rc.accountId, rc.agentName, false, rc.conversationId)
+			fallbackProvider := GetLLMProvider(rc.ctx, rc.accountId, rc.agentName, false, rc.conversationId, rc.resolution)
 			RecordModelRateLimitHit(fallbackProvider, model)
 			common.MetricsLLMRateLimitHitsTotal(fallbackProvider, model, rc.accountId)
 			ctx.GetLogger().Warn("Fallback model also has quota issues, trying next",
@@ -1905,6 +1913,10 @@ func generateLLMContentWithRetry(ctx *security.RequestContext, llm llms.Model, p
 	if res == nil {
 		res, _ = ResolveLLMConfig(ctx, accountId, agentName, conversationId)
 	}
+	// Keep the tier-aware resolution on rc so the cache-path getLLMApiKey (and
+	// any other downstream key lookup) resolves the same tier-specific key the
+	// client was built with — provider/model are already threaded via res here.
+	rc.resolution = res
 
 	rc.currentProvider = GetLLMProvider(ctx, accountId, rc.agentName, true, conversationId, res)
 	rc.currentModel = GetLLMModelName(ctx, accountId, rc.currentProvider, rc.agentName, true, conversationId, res)
