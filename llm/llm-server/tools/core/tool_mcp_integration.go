@@ -153,9 +153,18 @@ func (m mcpIntegrationTool) Call(ctx NbToolContext, input NBToolCallRequest) (NB
 	response, err := executeMCPViaRelay(ctx.AccountId, m.config, "tools/call", callParams, time.Duration(config.Config.LlmServerMCPExecutionTimeoutSeconds)*time.Second)
 	if err != nil {
 		log.Error("mcp-integration: tool call failed", "error", err)
+		// Emit the failure as JSON so the tool response is consistently JSON
+		// whether the call succeeds (MCP server JSON-RPC) or fails. This is an
+		// integration-layer error (not the MCP server's), so it is labelled as
+		// such rather than forged into a JSON-RPC error object.
+		errJSON, _ := json.Marshal(map[string]string{
+			"error":  fmt.Sprintf("MCP tool call failed: %v", err),
+			"source": "mcp_integration",
+			"reason": classifyMCPError(err),
+		})
 		return NBToolResponse{
 			Status: NBToolResponseStatusError,
-			Data:   fmt.Sprintf("MCP tool call failed: %v", err),
+			Data:   string(errJSON),
 			Type:   NBToolResponseTypeText,
 		}, nil
 	}
@@ -165,6 +174,25 @@ func (m mcpIntegrationTool) Call(ctx NbToolContext, input NBToolCallRequest) (NB
 		Data:   response,
 		Type:   NBToolResponseTypeText,
 	}, nil
+}
+
+// classifyMCPError buckets an MCP/relay failure into a short reason tag so the
+// LLM consuming the error response can react appropriately (e.g. distinguish a
+// timeout from an unreachable server). Best-effort string match — these
+// transport failures have no sentinel errors to match on. Match case-insensitively
+// so lowercase stdlib errors (e.g. "i/o timeout") classify correctly.
+func classifyMCPError(err error) string {
+	s := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(s, "deadline exceeded"), strings.Contains(s, "timeout"):
+		return "timeout"
+	case strings.Contains(s, "unable to access relay"):
+		return "relay_unreachable"
+	case strings.Contains(s, "connection refused"):
+		return "mcp_unreachable"
+	default:
+		return "mcp_error"
+	}
 }
 
 // executeMCPViaRelay sends an MCP JSON-RPC request through the relay server.
@@ -459,6 +487,45 @@ func loadMCPIntegrationConfigs(accountId string) []mcpIntegrationConfig {
 	return configs
 }
 
+// mcpUnavailableTool is a sentinel returned in place of an enabled MCP
+// integration's real tools when discovery fails. It keeps the integration
+// VISIBLE to the planner — which otherwise improvises unpredictably when the
+// tools silently vanish — and returns a consistent JSON "unavailable" error.
+type mcpUnavailableTool struct {
+	integrationName string
+	reason          string
+}
+
+func newMCPUnavailableTool(cfg mcpIntegrationConfig, reason string) mcpUnavailableTool {
+	return mcpUnavailableTool{integrationName: cfg.IntegrationName, reason: reason}
+}
+
+func (t mcpUnavailableTool) Name() string {
+	return sanitizeToolPrefix(t.integrationName) + "_unavailable"
+}
+
+func (t mcpUnavailableTool) Description() string {
+	return fmt.Sprintf("The MCP integration %q is configured but currently UNREACHABLE (%s). "+
+		"Its tools cannot be used right now — clearly tell the user this integration is unavailable "+
+		"instead of attempting other tools.", t.integrationName, t.reason)
+}
+
+func (t mcpUnavailableTool) InputSchema() ToolSchema {
+	return ToolSchema{Type: ToolSchemaTypeObject, Properties: map[string]ToolSchemaProperty{}}
+}
+
+func (t mcpUnavailableTool) GetType() NBToolType { return NBToolTypeTool }
+
+func (t mcpUnavailableTool) Call(_ NbToolContext, _ NBToolCallRequest) (NBToolResponse, error) {
+	j, _ := json.Marshal(map[string]any{
+		"error":     fmt.Sprintf("MCP integration %q is currently unreachable", t.integrationName),
+		"source":    "mcp_integration",
+		"reason":    t.reason,
+		"available": false,
+	})
+	return NBToolResponse{Status: NBToolResponseStatusError, Data: string(j), Type: NBToolResponseTypeText}, nil
+}
+
 // discoverMCPTools calls tools/list on an MCP server via relay and returns NBTools.
 func discoverMCPTools(accountId string, cfg mcpIntegrationConfig) []NBTool {
 	log := slog.With("integration_id", cfg.IntegrationID, "integration_name", cfg.IntegrationName, "account_id", accountId)
@@ -466,7 +533,9 @@ func discoverMCPTools(accountId string, cfg mcpIntegrationConfig) []NBTool {
 	response, err := executeMCPViaRelay(accountId, cfg, "tools/list", nil, time.Duration(config.Config.LlmServerMCPDiscoveryTimeoutSeconds)*time.Second)
 	if err != nil {
 		log.Error("mcp-integration: failed to discover tools", "error", err)
-		return nil
+		// Keep the integration visible (and consistently reported) instead of
+		// silently vanishing, which makes the agent improvise. See A2 fix.
+		return []NBTool{newMCPUnavailableTool(cfg, classifyMCPError(err))}
 	}
 
 	// Parse JSON-RPC response
@@ -496,12 +565,12 @@ func discoverMCPTools(accountId string, cfg mcpIntegrationConfig) []NBTool {
 
 	if err := json.Unmarshal([]byte(response), &rpcResp); err != nil {
 		log.Error("mcp-integration: failed to parse tools/list response", "error", err, "response", truncate(response, 500))
-		return nil
+		return []NBTool{newMCPUnavailableTool(cfg, "invalid_response")}
 	}
 
 	if rpcResp.Error != nil {
 		log.Error("mcp-integration: tools/list returned error", "code", rpcResp.Error.Code, "message", rpcResp.Error.Message)
-		return nil
+		return []NBTool{newMCPUnavailableTool(cfg, "discovery_error")}
 	}
 
 	tools := make([]NBTool, 0, len(rpcResp.Result.Tools))
