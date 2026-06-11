@@ -90,6 +90,11 @@ const NotificationForm = ({
         <Typography sx={{ color: ds.gray[700], fontSize: ds.text.title, fontWeight: ds.weight.semibold }}>Notify me on</Typography>
       </Box>
 
+      <Typography sx={{ color: ds.gray[500], fontSize: ds.text.caption, padding: `${ds.space[2]} ${ds.space[4]} 0` }}>
+        You're notified only when this optimization makes a change — an in-place resize applied, a PR raised, or a ticket created (and if a change
+        fails). Scheduled runs that make no changes stay silent. For PRs, the link arrives in a short follow-up message once the PR is created.
+      </Typography>
+
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: ds.space[4], padding: `${ds.space[4]} ${ds.space[3]}` }}>
         {/* Slack */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: ds.space[1] }}>

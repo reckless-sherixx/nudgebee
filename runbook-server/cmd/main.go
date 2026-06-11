@@ -199,6 +199,8 @@ func main() {
 		optimizerWorker.RegisterActivityWithOptions(optimizerActivities.GenerateTasksActivity, activity.RegisterOptions{Name: workflow.GenerateTasksActivityName})
 		optimizerWorker.RegisterActivityWithOptions(optimizerActivities.ExecuteTaskActivity, activity.RegisterOptions{Name: workflow.ExecuteTaskActivityName})
 		optimizerWorker.RegisterActivityWithOptions(optimizerActivities.CompleteAutoOptimizeActivity, activity.RegisterOptions{Name: workflow.CompleteAutoOptimizeActivityName})
+		optimizerWorker.RegisterActivityWithOptions(optimizerActivities.CollectPRResultsActivity, activity.RegisterOptions{Name: workflow.CollectPRResultsActivityName})
+		optimizerWorker.RegisterActivityWithOptions(optimizerActivities.NotifyPRsReadyActivity, activity.RegisterOptions{Name: workflow.NotifyPRsReadyActivityName})
 
 		go func() {
 			if err := optimizerWorker.Run(worker.InterruptCh()); err != nil {
