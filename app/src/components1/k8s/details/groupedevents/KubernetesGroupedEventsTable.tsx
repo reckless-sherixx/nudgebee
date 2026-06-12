@@ -387,16 +387,17 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
     ];
   }, [groupEventType]);
 
-  const { accounts, accountType, workloadFilter, namespaceFilter, aggregationKeyFilter, sourceFilter, isOptionsLoading } = useKubernetesEventFilters({
-    selectedAccountId,
-    isTroubleshootPage,
-    enableFilters: true,
-    disabledFilters: ['subjectType', ...(isTroubleshootPage && !selectedAccountId.length ? ['workload', 'namespace'] : [])],
-    resource_ids: [],
-    selectedNamespace,
-    startTime: new Date(selectedDateRange.startDate).toISOString(),
-    endTime: new Date(selectedDateRange.endDate).toISOString(),
-  });
+  const { accounts, accountType, workloadFilter, namespaceFilter, aggregationKeyFilter, sourceFilter, nbStatusFilter, isOptionsLoading } =
+    useKubernetesEventFilters({
+      selectedAccountId,
+      isTroubleshootPage,
+      enableFilters: true,
+      disabledFilters: ['subjectType', ...(isTroubleshootPage && !selectedAccountId.length ? ['workload', 'namespace'] : [])],
+      resource_ids: [],
+      selectedNamespace,
+      startTime: new Date(selectedDateRange.startDate).toISOString(),
+      endTime: new Date(selectedDateRange.endDate).toISOString(),
+    });
 
   const { serviceNamesFilter, isOptionsLoading: cloudOptionsLoading } = useEventCloudFilter(
     selectedAccountId,
@@ -1056,21 +1057,14 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
     {
       type: 'multi-dropdown',
       enabled: true,
-      options: [
-        { value: 'OPEN', label: 'Open' },
-        { value: 'ACTION_REQUIRED', label: 'Action Required' },
-        { value: 'SNOOZED', label: 'Snoozed' },
-        { value: 'SUPPRESSED', label: 'Suppressed' },
-        { value: 'DROPPED', label: 'Dropped' },
-        { value: 'DUPLICATE', label: 'Duplicate' },
-        { value: 'RESOLVED', label: 'Resolved' },
-      ],
-      onSelect: (e: any) => {
-        setSelectedNBStatus(e.target.value);
+      options: nbStatusFilter,
+      onSelect: (_e: any, value: any) => {
+        setSelectedNBStatus(value || []);
         setCurrentPage(1);
       },
       label: 'Triage Status',
       value: selectedNBStatus,
+      isOptionsLoading: isOptionsLoading.nbStatus,
     },
   ];
 
