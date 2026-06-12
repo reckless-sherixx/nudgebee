@@ -6,6 +6,7 @@ jest.mock('@api1/recommendation', () => ({
   default: {
     listRecommendationNamesapces: jest.fn(),
     listRecommendationFilter: jest.fn(),
+    getRecommendationDetails: jest.fn(() => null),
   },
   RECOMMENDATION_SERVERITY: ['low', 'medium', 'high'],
 }));
@@ -103,7 +104,7 @@ describe('useEventCloudFilter', () => {
   it('returns static filters (statusFilter, nbStatusFilter) and empty sourceFilter when accountId is falsy', () => {
     const { result } = renderHook(() => useEventCloudFilter(''));
     expect(result.current.sourceFilter).toHaveLength(0);
-    expect(result.current.statusFilter).toHaveLength(2);
+    expect(result.current.statusFilter).toHaveLength(3);
     expect(result.current.nbStatusFilter).toHaveLength(7);
   });
 

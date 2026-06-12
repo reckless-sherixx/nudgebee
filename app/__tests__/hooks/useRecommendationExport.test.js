@@ -95,6 +95,6 @@ describe('useRecommendationExport', () => {
     await act(async () => {
       await result.current.handleExportDownload('csv');
     });
-    expect(mockExport).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'default', workloadType: 'Deployment', status: 'open' }));
+    expect(mockExport).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'default', workloadType: 'Deployment', status: ['open'] }));
   });
 });
