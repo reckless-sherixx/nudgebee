@@ -191,7 +191,7 @@ const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
           sx={{
             position: 'absolute',
             left: '50%',
-            top: '24px',
+            top: '12px',
             transform: 'translateX(-50%)',
             zIndex: 11,
           }}
