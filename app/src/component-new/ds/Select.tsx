@@ -187,6 +187,34 @@ function ClearButton({ onClear, label }: { onClear: (e: React.SyntheticEvent) =>
   );
 }
 
+function SelectedLabel({ label }: { label: string }) {
+  const [isOverflowing, setIsOverflowing] = React.useState(false);
+
+  return (
+    <Tooltip title={isOverflowing ? label : ''} placement='top'>
+      <Box
+        component='span'
+        onMouseEnter={(e) => {
+          const el = e.currentTarget;
+          setIsOverflowing(el.scrollWidth > el.clientWidth);
+        }}
+        sx={{
+          color: 'var(--ds-blue-500)',
+          fontWeight: 'var(--ds-font-weight-semibold)',
+          maxWidth: ds.space.mul(0, 50),
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}
+      </Box>
+    </Tooltip>
+  );
+}
+
 export function Select(props: SelectProps) {
   const {
     options: rawOptions,
@@ -327,15 +355,16 @@ export function Select(props: SelectProps) {
         {visible.map((opt, i) => (
           <React.Fragment key={opt.value}>
             {i > 0 && (
-              <Box component='span' sx={{ color: 'var(--ds-gray-500)' }}>
-                ,{' '}
+              <Box component='span' sx={{ color: 'var(--ds-gray-700)', fontWeight: 'var(--ds-font-weight-regular)', mr: ds.space[1] }}>
+                ,
               </Box>
             )}
-            <span>{opt.label}</span>
+            <SelectedLabel label={typeof opt.label === 'string' ? opt.label : String(opt.value)} />
           </React.Fragment>
         ))}
         {hidden > 0 && (
           <Tooltip
+            variant='interactive'
             title={
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: ds.space[0] }}>
                 {selectedOpts.slice(maxChips).map((o) => (
@@ -348,13 +377,16 @@ export function Select(props: SelectProps) {
             <Box
               component='span'
               sx={{
-                marginLeft: ds.space[1],
-                padding: '0 5px',
+                ml: ds.space[1],
                 backgroundColor: 'var(--ds-gray-100)',
                 color: 'var(--ds-gray-700)',
-                fontSize: 'var(--ds-text-caption)',
+                border: '1px solid var(--ds-gray-200)',
                 borderRadius: ds.radius.sm,
-                fontVariantNumeric: 'tabular-nums',
+                padding: `0 ${ds.space[1]}`,
+                fontSize: 'var(--ds-text-caption)',
+                fontWeight: 'var(--ds-font-weight-medium)',
+                lineHeight: ds.space[4],
+                display: 'inline-block',
                 flexShrink: 0,
                 cursor: 'default',
               }}

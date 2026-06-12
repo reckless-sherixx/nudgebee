@@ -266,7 +266,7 @@ export function OverlayItem({
         fontSize: ITEM_FONT[size],
         // Selected (value-picker) → blue text + medium weight. Danger always wins.
         color: tone === 'danger' ? ITEM_TONE_COLOR.danger : selected ? 'var(--ds-blue-600)' : ITEM_TONE_COLOR.default,
-        fontWeight: selected ? 500 : 400,
+        fontWeight: selected ? 'var(--ds-font-weight-medium)' : 'var(--ds-font-weight-regular)',
         backgroundColor: selected ? 'var(--ds-overlay-item-selected-bg)' : 'transparent',
         gap: 'var(--ds-space-2)',
         display: 'flex',
@@ -298,15 +298,15 @@ export function OverlayItem({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            minWidth: '18px',
-            height: '16px',
-            padding: '0 5px',
+            minWidth: ds.space.mul(0, 9),
+            height: ds.space[4],
+            padding: `0 ${ds.space[1]}`,
             backgroundColor: 'var(--ds-gray-100)',
             color: 'var(--ds-gray-700)',
             fontSize: 'var(--ds-text-caption)',
             fontFamily: 'var(--ds-font-mono)',
             fontVariantNumeric: 'tabular-nums',
-            borderRadius: '9px',
+            borderRadius: ds.radius.pill,
             flexShrink: 0,
           }}
         >
@@ -323,7 +323,7 @@ export function OverlayItem({
             backgroundColor: 'var(--ds-gray-100)',
             border: '1px solid var(--ds-gray-200)',
             borderRadius: 'var(--ds-radius-sm)',
-            padding: '1px 6px',
+            padding: `${ds.space[0]} ${ds.space.mul(0, 3)}`,
             flexShrink: 0,
           }}
         >
@@ -346,7 +346,7 @@ export function OverlaySection({ children }: OverlaySectionProps) {
   return (
     <Typography
       sx={{
-        padding: 'var(--ds-space-2) 14px var(--ds-space-1)',
+        padding: `var(--ds-space-2) ${ds.space.mul(0, 7)} var(--ds-space-1)`,
         fontSize: 'var(--ds-text-caption)',
         color: 'var(--ds-gray-700)',
         fontWeight: 'var(--ds-font-weight-semibold)',
@@ -385,8 +385,8 @@ export function OverlayCheckbox({ checked }: { checked: boolean }) {
   return (
     <Box
       sx={{
-        width: 16,
-        height: 16,
+        width: ds.space[4],
+        height: ds.space[4],
         borderRadius: ds.radius.sm,
         border: checked ? 'none' : '1.5px solid var(--ds-gray-300)',
         backgroundColor: checked ? 'var(--ds-blue-600)' : 'transparent',
@@ -425,7 +425,7 @@ export function OverlayScrollBox({ maxHeight = '260px', children }: OverlayScrol
         maxHeight,
         overflowY: 'auto',
         paddingBottom: 'var(--ds-overlay-padding-y)',
-        '&::-webkit-scrollbar': { width: '4px' },
+        '&::-webkit-scrollbar': { width: ds.space[1] },
         '&::-webkit-scrollbar-track': { background: 'transparent' },
         '&::-webkit-scrollbar-thumb': { background: 'var(--ds-gray-300)', borderRadius: ds.radius.sm },
         '&::-webkit-scrollbar-thumb:hover': { background: 'var(--ds-gray-400)' },
@@ -489,7 +489,15 @@ function SearchGlyph() {
       height='12'
       viewBox='0 0 12 12'
       fill='none'
-      style={{ opacity: 0.4, position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+      style={{
+        opacity: 0.4,
+        position: 'absolute',
+        left: ds.space.mul(0, 5),
+        top: '50%',
+        transform: 'translateY(-50%)',
+        pointerEvents: 'none',
+        zIndex: 1,
+      }}
     >
       <circle cx='5' cy='5' r='4' stroke='currentColor' strokeWidth='1.5' />
       <line x1='8' y1='8' x2='11' y2='11' stroke='currentColor' strokeWidth='1.5' strokeLinecap='round' />
@@ -506,11 +514,21 @@ export interface OverlaySearchProps {
 }
 
 export function OverlaySearch({ value, onChange, placeholder = 'Search…', autoFocus = true, onKeyDown }: OverlaySearchProps) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  // autoFocus on InputBase is unreliable inside MUI Menu/Popover — the overlay
+  // reclaims focus after mounting. Explicitly focus after the open transition.
+  React.useEffect(() => {
+    if (!autoFocus) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <Box sx={{ margin: '8px 10px 6px 10px', position: 'relative' }}>
+    <Box sx={{ margin: `${ds.space[2]} ${ds.space.mul(0, 5)} ${ds.space.mul(0, 3)} ${ds.space.mul(0, 5)}`, position: 'relative' }}>
       <SearchGlyph />
       <InputBase
-        autoFocus={autoFocus}
+        inputRef={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -522,7 +540,7 @@ export function OverlaySearch({ value, onChange, placeholder = 'Search…', auto
           border: '1px solid var(--ds-gray-200)',
           backgroundColor: 'var(--ds-gray-100)',
           borderRadius: 'var(--ds-radius-md)',
-          padding: '6px 10px 6px 28px',
+          padding: `${ds.space.mul(0, 3)} ${ds.space.mul(0, 5)} ${ds.space.mul(0, 3)} ${ds.space.mul(0, 14)}`,
           transition: 'all 0.15s ease',
           '&.Mui-focused': {
             backgroundColor: 'var(--ds-background-100)',
@@ -609,7 +627,7 @@ export function OverlaySelectAll({ checked, onToggle, showClear, onClear, label 
           </Box>
         )}
       </Box>
-      <Box sx={{ borderBottom: '0.5px solid var(--ds-gray-200)', margin: '4px 10px' }} />
+      <Box sx={{ borderBottom: '0.5px solid var(--ds-gray-200)', margin: `${ds.space[1]} ${ds.space.mul(0, 5)}` }} />
     </>
   );
 }

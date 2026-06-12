@@ -39,7 +39,7 @@ const OVERSCAN_COUNT = 10;
 
 // Field chrome scale — mirrors ds/Input so FilterDropdown triggers align
 // with Input rows when placed in a form/toolbar together.
-const SIZE_HEIGHT = { sm: '32px', md: '36px', lg: '40px' };
+const SIZE_HEIGHT = { sm: ds.space[6], md: ds.space.mul(0, 18), lg: ds.space.mul(0, 20) };
 const SIZE_PAD_X = { sm: 'var(--ds-space-3)', md: 'var(--ds-space-3)', lg: 'var(--ds-space-4)' };
 
 // Safe key helper: falls back to label when getValue returns a non-primitive
@@ -84,7 +84,15 @@ const SearchIcon = () => (
     height='12'
     viewBox='0 0 12 12'
     fill='none'
-    style={{ opacity: 0.35, position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}
+    style={{
+      opacity: 0.35,
+      position: 'absolute',
+      left: ds.space.mul(0, 5),
+      top: '50%',
+      transform: 'translateY(-50%)',
+      pointerEvents: 'none',
+      zIndex: 1,
+    }}
   >
     <circle cx='5' cy='5' r='4' stroke='currentColor' strokeWidth='1.5' />
     <line x1='8' y1='8' x2='11' y2='11' stroke='currentColor' strokeWidth='1.5' strokeLinecap='round' />
@@ -163,7 +171,7 @@ const OptionItem = React.memo(function OptionItem({ opt, selected, multiple, onT
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
+        gap: ds.space.mul(0, 5),
         padding: 'var(--ds-overlay-item-padding-md)',
         margin: '0 var(--ds-overlay-item-margin-x)',
         borderRadius: 'var(--ds-overlay-item-radius)',
@@ -214,7 +222,7 @@ function OptionsLoadingSkeleton({ multiple }) {
           sx={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            gap: ds.space.mul(0, 5),
             padding: 'var(--ds-overlay-item-padding-md)',
             margin: '0 var(--ds-overlay-item-margin-x)',
             height: `${OPTION_HEIGHT}px`,
@@ -285,7 +293,7 @@ function OptionsList({ isOptionsLoading, filteredOptions, multiple, isSelected, 
     maxHeight: '260px',
     overflowY: 'auto',
     padding: 'var(--ds-overlay-padding-y) 0',
-    '&::-webkit-scrollbar': { width: '4px' },
+    '&::-webkit-scrollbar': { width: ds.space[1] },
     '&::-webkit-scrollbar-track': { background: 'transparent' },
     '&::-webkit-scrollbar-thumb': { background: 'var(--ds-gray-300)', borderRadius: ds.radius.sm },
     '&::-webkit-scrollbar-thumb:hover': { background: 'var(--ds-gray-400)' },
@@ -302,7 +310,9 @@ function OptionsList({ isOptionsLoading, filteredOptions, multiple, isSelected, 
   if (filteredOptions.length === 0) {
     return (
       <Box sx={scrollboxSx}>
-        <Typography sx={{ padding: '16px 14px', fontSize: 'var(--ds-text-body)', color: 'var(--ds-gray-500)', textAlign: 'center' }}>
+        <Typography
+          sx={{ padding: `${ds.space[4]} ${ds.space.mul(0, 7)}`, fontSize: 'var(--ds-text-body)', color: 'var(--ds-gray-500)', textAlign: 'center' }}
+        >
           No results found
         </Typography>
       </Box>
@@ -336,7 +346,7 @@ function OptionsList({ isOptionsLoading, filteredOptions, multiple, isSelected, 
               sx={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
+                gap: ds.space.mul(0, 5),
                 cursor: 'pointer',
                 fontSize: 'var(--ds-text-body)',
                 fontWeight: 'var(--ds-font-weight-medium)',
@@ -373,7 +383,7 @@ function OptionsList({ isOptionsLoading, filteredOptions, multiple, isSelected, 
               </Typography>
             )}
           </Box>
-          <Box sx={{ borderBottom: '0.5px solid var(--ds-gray-200)', margin: '6px 10px' }} />
+          <Box sx={{ borderBottom: '0.5px solid var(--ds-gray-200)', margin: `${ds.space.mul(0, 3)} ${ds.space.mul(0, 5)}` }} />
         </>
       )}
 
@@ -499,7 +509,7 @@ function GroupedOptionsList({
     maxHeight: '260px',
     overflowY: 'auto',
     paddingBottom: ds.space[1],
-    '&::-webkit-scrollbar': { width: '4px' },
+    '&::-webkit-scrollbar': { width: ds.space[1] },
     '&::-webkit-scrollbar-track': { background: 'transparent' },
     '&::-webkit-scrollbar-thumb': { background: 'var(--ds-gray-300)', borderRadius: ds.radius.sm },
     '&::-webkit-scrollbar-thumb:hover': { background: 'var(--ds-gray-400)' },
@@ -516,7 +526,9 @@ function GroupedOptionsList({
   if (filteredOptions.length === 0) {
     return (
       <Box sx={scrollboxSx}>
-        <Typography sx={{ padding: '16px 14px', fontSize: 'var(--ds-text-body)', color: 'var(--ds-gray-500)', textAlign: 'center' }}>
+        <Typography
+          sx={{ padding: `${ds.space[4]} ${ds.space.mul(0, 7)}`, fontSize: 'var(--ds-text-body)', color: 'var(--ds-gray-500)', textAlign: 'center' }}
+        >
           No results found
         </Typography>
       </Box>
@@ -548,8 +560,11 @@ function GroupedOptionsList({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '0 14px',
+                padding: 'var(--ds-overlay-item-padding-md)',
+                margin: '0 var(--ds-overlay-item-margin-x)',
+                borderRadius: 'var(--ds-overlay-item-radius)',
                 height: `${OPTION_HEIGHT}px`,
+                boxSizing: 'border-box',
                 position: 'sticky',
                 top: 0,
                 zIndex: 10,
@@ -558,7 +573,7 @@ function GroupedOptionsList({
                 '&:hover': { backgroundColor: 'var(--ds-gray-100)' },
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: ds.space.mul(0, 3) }}>
                 {groupIcon && typeof groupIcon === 'function' && groupIcon(rawGroup)}
                 <Typography
                   sx={{
@@ -578,10 +593,10 @@ function GroupedOptionsList({
                       backgroundColor: 'var(--ds-blue-600)',
                       color: 'var(--ds-background-100)',
                       borderRadius: ds.radius.sm,
-                      minWidth: '10px',
-                      height: '18px',
+                      minWidth: ds.space.mul(0, 5),
+                      height: ds.space.mul(0, 9),
                       padding: `0 ${ds.space[1]}`,
-                      fontSize: '10px',
+                      fontSize: 'var(--ds-text-caption)',
                       fontWeight: 'var(--ds-font-weight-semibold)',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -654,7 +669,7 @@ function GroupedOptionsList({
 
                 {/* Divider between selected and unselected */}
                 {selectedInGroup.length > 0 && unselectedInGroup.length > 0 && (
-                  <Box sx={{ borderBottom: '0.5px solid var(--ds-gray-200)', margin: '6px 10px' }} />
+                  <Box sx={{ borderBottom: '0.5px solid var(--ds-gray-200)', margin: `${ds.space.mul(0, 3)} ${ds.space.mul(0, 5)}` }} />
                 )}
 
                 {/* Unselected items */}
@@ -919,7 +934,14 @@ function FilterDropdownButton({
   };
 
   useEffect(() => {
-    if (!open) setSearch('');
+    if (!open) {
+      setSearch('');
+      return;
+    }
+    // autoFocus on InputBase is unreliable inside MUI Popover — the popover
+    // reclaims focus after mounting. Explicitly focus after the open transition.
+    const timer = setTimeout(() => searchRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
   }, [open]);
 
   const handleKeyDown = (e) => {
@@ -978,7 +1000,7 @@ function FilterDropdownButton({
           ...sx,
         }}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: ds.space.mul(0, 3), flex: 1, overflow: 'hidden', minWidth: 0 }}>
           {(label || (!hasSelection && placeholder) || isOptionsLoading) && (
             <span
               style={{
@@ -1023,10 +1045,10 @@ function FilterDropdownButton({
                       color: 'var(--ds-gray-700)',
                       border: '1px solid var(--ds-gray-200)',
                       borderRadius: ds.radius.sm,
-                      padding: '0 5px',
-                      fontSize: '10px',
+                      padding: `0 ${ds.space[1]}`,
+                      fontSize: 'var(--ds-text-caption)',
                       fontWeight: 'var(--ds-font-weight-medium)',
-                      lineHeight: '16px',
+                      lineHeight: ds.space[4],
                       display: 'inline-block',
                       cursor: 'default',
                     }}
@@ -1087,11 +1109,10 @@ function FilterDropdownButton({
       >
         {/* Search - show when more than 8 options, or always when freeSolo */}
         {(options.length > 8 || freeSolo) && (
-          <Box sx={{ margin: '10px 10px 6px 10px', position: 'relative' }}>
+          <Box sx={{ margin: `${ds.space.mul(0, 5)} ${ds.space.mul(0, 5)} ${ds.space.mul(0, 3)} ${ds.space.mul(0, 5)}`, position: 'relative' }}>
             <SearchIcon />
             <InputBase
               inputRef={searchRef}
-              autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={searchPlaceholder || (freeSolo ? 'Search or type to add...' : 'Search...')}
@@ -1117,15 +1138,15 @@ function FilterDropdownButton({
                 width: '100%',
                 fontSize: 'var(--ds-text-body)',
                 color: 'var(--ds-gray-700)',
-                boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.15)',
                 border: '1px solid var(--ds-gray-200)',
-                backgroundColor: 'var(--ds-background-100)',
+                backgroundColor: 'var(--ds-gray-100)',
                 borderRadius: ds.radius.md,
-                padding: '7px 10px 7px 12px',
+                padding: `${ds.space.mul(0, 3)} ${ds.space.mul(0, 5)} ${ds.space.mul(0, 3)} ${ds.space.mul(0, 14)}`,
                 transition: 'all 0.15s ease',
                 '&.Mui-focused': {
                   backgroundColor: 'var(--ds-background-100)',
-                  boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.3)',
+                  borderColor: 'var(--ds-blue-500)',
+                  boxShadow: '0 0 0 3px var(--ds-blue-100)',
                 },
                 '& input::placeholder': {
                   color: 'var(--ds-gray-500)',
@@ -1155,7 +1176,7 @@ function FilterDropdownButton({
               display: 'flex',
               alignItems: 'center',
               gap: ds.space[2],
-              padding: '8px 14px',
+              padding: `${ds.space[2]} ${ds.space.mul(0, 7)}`,
               cursor: 'pointer',
               fontSize: 'var(--ds-text-body)',
               fontWeight: 'var(--ds-font-weight-medium)',
@@ -1214,7 +1235,7 @@ export function MoreFiltersButton({ count, expanded, onClick }) {
         border: 'none',
         padding: `${ds.space[1]} ${ds.space[0]}`,
         fontSize: 'var(--ds-text-small)',
-        fontWeight: 450,
+        fontWeight: 'var(--ds-font-weight-medium)',
         color: 'var(--ds-gray-500)',
         cursor: 'pointer',
         transition: 'color 0.15s ease',
