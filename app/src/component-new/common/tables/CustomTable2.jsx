@@ -755,16 +755,6 @@ const CustomTable = ({
                   },
                 },
               },
-              [`&:nth-last-of-type(${isExpandableRows ? 2 : 1})`]: {
-                td: {
-                  '&:nth-of-type(1)': {
-                    borderRadius: '0',
-                  },
-                  '&:nth-last-of-type(1)': {
-                    borderRadius: '0',
-                  },
-                },
-              },
             },
             // Redesigned Table: body surface is always white — the rhythm is
             // carried by whitespace and the 1px row dividers, not a row fill.
@@ -804,7 +794,16 @@ const CustomTable = ({
   const renderSkeletonBody = () => {
     const skeletonRowCount = Math.min(rowsPerPage || 5, 10);
     return (
-      <TableBody>
+      <TableBody
+        sx={
+          isExpandableRows
+            ? {
+                'tr:nth-last-of-type(2) td': { borderBottom: `1px solid ${ds.gray[200]} !important` },
+                'tr:last-of-type td': { borderBottom: '0 !important' },
+              }
+            : undefined
+        }
+      >
         {Array.from({ length: skeletonRowCount }).map((_, rowIdx) => (
           <TableRow key={`skel-${rowIdx}`}>
             {filteredHeaders.map((_h, colIdx) => (
@@ -992,10 +991,12 @@ const CustomTable = ({
             },
             // Row dividers: 1px gray-200; the last row's bottom rule is
             // suppressed in favour of the container's bottom border.
-            'tbody tr td': {
+            // Direct-child selectors (>) prevent these rules from leaking
+            // into nested tables rendered inside drilldown expand rows.
+            '& > tbody > tr > td': {
               borderBottom: `1px solid ${ds.gray[200]}`,
             },
-            [`tbody tr:nth-last-of-type(${isExpandableRows ? 2 : 1}) td`]: {
+            [`& > tbody > tr:nth-last-of-type(${isExpandableRows ? 2 : 1}) > td`]: {
               borderBottom: 0,
             },
             borderCollapse: 'collapse',
