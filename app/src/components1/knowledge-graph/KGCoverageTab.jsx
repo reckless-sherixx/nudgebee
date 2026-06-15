@@ -61,14 +61,17 @@ const KGCoverageTab = ({ open, onSaved, onClose }) => {
 
         setCloudAccounts(accounts);
 
-        if (filter?.exists) {
-          setSelectedAccountIds(new Set(filter.account_ids ?? []));
-          setSelectedFlowSources(new Set(filter.flow_sources ?? []));
-        } else {
-          // No row yet: pre-select everything so save with no changes is a no-op.
-          setSelectedAccountIds(new Set(accounts.map((a) => a.id)));
-          setSelectedFlowSources(new Set(FLOW_SOURCES.map((f) => f.id)));
-        }
+        // An empty (or missing) account_ids / flow_sources list means "all" — that's
+        // exactly how the backend resolves the filter at build time: an empty list
+        // expands to every active account / every enabled flow source. The nightly
+        // cron also pre-creates a default row with empty arrays for every tenant, so
+        // `exists` is almost always true with empty lists. Mirror the backend here:
+        // empty => pre-select everything, so the UI reflects what the graph actually
+        // builds instead of showing every box unchecked (which read as "nothing on").
+        const savedAccountIds = filter?.account_ids ?? [];
+        const savedFlowSources = filter?.flow_sources ?? [];
+        setSelectedAccountIds(savedAccountIds.length > 0 ? new Set(savedAccountIds) : new Set(accounts.map((a) => a.id)));
+        setSelectedFlowSources(savedFlowSources.length > 0 ? new Set(savedFlowSources) : new Set(FLOW_SOURCES.map((f) => f.id)));
       })
       .catch((err) => {
         console.error('Failed to load KG settings:', err);
@@ -108,9 +111,15 @@ const KGCoverageTab = ({ open, onSaved, onClose }) => {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Send an empty list when everything is selected, mirroring the backend's
+      // "empty == all" semantics. Persisting the explicit full list would pin
+      // coverage to today's accounts/flow sources and silently exclude any added
+      // later; collapsing a full selection back to "all" keeps new ones covered.
+      const allAccountsSelected = cloudAccounts.length > 0 && cloudAccounts.every((acc) => selectedAccountIds.has(acc.id));
+      const allFlowSourcesSelected = FLOW_SOURCES.every((fs) => selectedFlowSources.has(fs.id));
       const res = await apiKnowledgeGraph.upsertTenantFilter({
-        accountIds: Array.from(selectedAccountIds),
-        flowSources: Array.from(selectedFlowSources),
+        accountIds: allAccountsSelected ? [] : Array.from(selectedAccountIds),
+        flowSources: allFlowSourcesSelected ? [] : Array.from(selectedFlowSources),
       });
       const errors = res?.data?.errors;
       if (errors?.length) {
