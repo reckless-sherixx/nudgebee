@@ -555,7 +555,7 @@ func (s *Service) handleWorkflowTrigger(ctx *security.RequestContext, id, tenant
 	// Live execution snapshot for scheduled runs, resolved lazily on the first
 	// schedule trigger so webhook-only workflows skip the lookup. Scheduled runs
 	// must bake and execute the live version, not the draft (H1).
-	var liveExecDef *model.WorkflowDefinition
+	var liveExecDef model.WorkflowDefinition
 	var liveVersionMemo map[string]any
 
 	// Process all triggers
@@ -590,15 +590,15 @@ func (s *Service) handleWorkflowTrigger(ctx *security.RequestContext, id, tenant
 					// Create or update this specific schedule. Resolve the live
 					// version once (the schedule executes it, not the draft) and
 					// reuse it across every schedule trigger on this workflow.
-					if liveExecDef == nil {
+					if liveVersionMemo == nil {
 						d, m, rerr := s.resolveLiveExecution(ctx.GetContext(), id)
 						if rerr != nil {
 							return nil, "", rerr
 						}
-						liveExecDef, liveVersionMemo = &d, m
+						liveExecDef, liveVersionMemo = d, m
 					}
 					paused := wf.Status == model.WorkflowStatusPaused
-					err := s.createOrUpdateSchedule(ctx.GetContext(), id, tenantId, accountId, wf, scheduleCount, cron, overlapPolicy, catchupWindow, inputs, paused, *liveExecDef, liveVersionMemo)
+					err := s.createOrUpdateSchedule(ctx.GetContext(), id, tenantId, accountId, wf, scheduleCount, cron, overlapPolicy, catchupWindow, inputs, paused, liveExecDef, liveVersionMemo)
 					if err != nil {
 						return nil, "", fmt.Errorf("failed to create or update schedule index %d: %w", scheduleCount, err)
 					}

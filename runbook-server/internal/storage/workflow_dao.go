@@ -69,7 +69,7 @@ func (s *WorkflowDao) CreateWorkflowWithInitialVersion(ctx context.Context, tena
 	}
 	tagBytes, err := json.Marshal(wf.Tags)
 	if err != nil {
-		log.Printf("failed to marshal tags: %v", err)
+		return "", nil, fmt.Errorf("failed to marshal tags: %w", err)
 	}
 
 	var createdFromSessionID sql.NullString
@@ -843,7 +843,7 @@ func (s *WorkflowDao) Update(ctx context.Context, tenantID, accountID, id string
 
 	tagBytes, err := json.Marshal(wf.Tags)
 	if err != nil {
-		log.Printf("failed to marshal tags: %v", err)
+		return fmt.Errorf("failed to marshal tags: %w", err)
 	}
 
 	tx, err := s.db.BeginTxx(ctx, nil)
@@ -893,7 +893,7 @@ func (s *WorkflowDao) UpdateInternal(ctx context.Context, tenantID, accountID, i
 
 	tagBytes, err := json.Marshal(wf.Tags)
 	if err != nil {
-		log.Printf("failed to marshal tags: %v", err)
+		return fmt.Errorf("failed to marshal tags: %w", err)
 	}
 
 	tx, err := s.db.BeginTxx(ctx, nil)
