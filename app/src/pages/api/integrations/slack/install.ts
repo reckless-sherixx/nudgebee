@@ -36,10 +36,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     token = !token && jwtToken ? (jwtToken.idToken as string) : token;
 
-    if (authenticate) {
-      if (!token) {
-        return sendAuthenticationError(res);
-      }
+    // Gate on tenant (set for every login method), not idToken: the notifications
+    // route needs the tenant header, not a bearer, so SAML / magic-link logins
+    // (which have no idToken) must not be rejected here.
+    if (authenticate && !tenantId) {
+      return sendAuthenticationError(res);
     }
     const notificaionServiceUrl = process.env.NOTIFICATION_SERVICE_URL ? process.env.NOTIFICATION_SERVICE_URL : 'http://notifications:80';
     const installEndpoint = notificaionServiceUrl + '/slack/install?tenant=' + `${tenantId}`;

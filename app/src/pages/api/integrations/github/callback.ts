@@ -2,8 +2,9 @@ import crypto from 'crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { generateGithubAppJwt, getRequestId, sendAuthenticationError } from '@utils/apiUtils';
-import { authenticateRequest, tryBypassGraphQL } from '@lib/rpcGateway';
+import { tryBypassGraphQL } from '@lib/rpcGateway';
 import { decodeIdentityState } from '@lib/integrationState';
+import { resolveRequestAuth } from '@lib/sessionToken';
 import { getAppBaseUrl } from '@lib/externalUrls';
 
 export const CREATE_INTEGRATION = `
@@ -74,7 +75,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // redirect. The signed `state` is a CSRF token: it must decrypt and its
     // tenant must match the session, blocking cross-tenant state injection and
     // OAuth installation/code injection.
-    const auth = await authenticateRequest(req);
+    const auth = await resolveRequestAuth(req);
     const tenantId = ((auth?.jwt?.tenant as { id?: string } | undefined)?.id as string) || null;
     if (!auth?.jwt || !tenantId) {
       return sendAuthenticationError(res);

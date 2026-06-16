@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { getRequestId, sendAuthenticationError } from '@utils/apiUtils';
-import { authenticateRequest } from '@lib/rpcGateway';
 import { encodeIdentityState } from '@lib/integrationState';
+import { resolveRequestAuth } from '@lib/sessionToken';
 import { getAppBaseUrl } from '@lib/externalUrls';
 
 // GitHub App installation entry point. Runs same-origin (the popup opens THIS
@@ -29,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const requestId = getRequestId(req);
 
   try {
-    const auth = await authenticateRequest(req);
+    const auth = await resolveRequestAuth(req);
     const tenantId = ((auth?.jwt?.tenant as { id?: string } | undefined)?.id as string) || null;
     if (!auth?.jwt || !tenantId) {
       return sendAuthenticationError(res);

@@ -17,9 +17,10 @@ export async function encodeIdentityState(identity: IntegrationIdentity): Promis
 
 // Null for absent / legacy-uuid4 / tampered / expired state — callers then fall back to the cookie.
 export async function decodeIdentityState(state: string | string[] | undefined): Promise<IntegrationIdentity | null> {
-  if (typeof state !== 'string' || state.length === 0) return null;
+  const raw = Array.isArray(state) ? state[0] : state;
+  if (typeof raw !== 'string' || raw.length === 0) return null;
   try {
-    const parsed = JSON.parse(await decrypt(state)) as { tenant_id?: unknown; user_email?: unknown; ts?: unknown };
+    const parsed = JSON.parse(await decrypt(raw)) as { tenant_id?: unknown; user_email?: unknown; ts?: unknown };
     if (typeof parsed.tenant_id !== 'string' || parsed.tenant_id.length === 0) return null;
     if (typeof parsed.ts !== 'number') return null;
     const age = Date.now() - parsed.ts;
