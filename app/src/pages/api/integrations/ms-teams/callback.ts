@@ -7,21 +7,27 @@ import { getRequestId, handleOAuthCallbackResponse, sendAuthenticationError } fr
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const requestId: string = getRequestId(req);
   try {
-    // Identity from the signed `state` (cookie-independent); fall back to the
-    // session only for installs still in flight across a deploy.
-    let identity = await decodeIdentityState(req.query.state);
-    if (!identity) {
-      const jwt = await resolveRequestJwt(req);
-      const tenantId = ((jwt?.tenant as { id?: string } | undefined)?.id as string) || null;
-      if (tenantId) {
-        identity = { tenant_id: tenantId, user_email: (jwt?.email as string) || 'system' };
-      }
-    }
-
-    if (!identity?.tenant_id) {
+    // Tenant is authoritative from the installer's own session, never from the
+    // redirect. The signed `state` is a CSRF token: it must decrypt and its
+    // tenant must match the session, proving this callback completes a flow the
+    // session itself initiated — which blocks both cross-tenant state injection
+    // and OAuth code injection.
+    const jwt = await resolveRequestJwt(req);
+    const tenantId = ((jwt?.tenant as { id?: string } | undefined)?.id as string) || null;
+    if (!tenantId) {
       return sendAuthenticationError(res);
     }
 
+    const signed = await decodeIdentityState(req.query.state);
+    if (!signed || signed.tenant_id !== tenantId) {
+      res
+        .status(400)
+        .setHeader('x-request-id', requestId)
+        .json({ error: 'invalid_state', description: 'State missing, expired, or tenant mismatch' });
+      return;
+    }
+
+    const identity: IntegrationIdentity = { tenant_id: tenantId, user_email: (jwt?.email as string) || 'system' };
     await doRedirect(req, identity, requestId, res);
   } catch (error: any) {
     handleErrorResponse(res, error, requestId);
