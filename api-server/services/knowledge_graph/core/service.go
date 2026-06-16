@@ -3934,29 +3934,31 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 		limit = 100
 	}
 
-	query := `SELECT id, node_type, COALESCE(source, '') AS source, query_attributes, labels, properties, cloud_account_id
-		FROM knowledge_graph_node
-		WHERE tenant_id = $1 AND is_active = true`
+	// Build the filter predicate once and share it between the COUNT (true total,
+	// pre-LIMIT) and the paged SELECT. Without the separate COUNT, total_count
+	// could only ever equal the returned page size, so a capped "list all X"
+	// result looked complete (e.g. 20 of 320 ExternalServices reported as 20).
+	whereClause := "tenant_id = $1 AND is_active = true"
 	args := []interface{}{tenantID}
 	argIdx := 2
 
 	if params.Name != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'name' = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'name' = $%d", argIdx)
 		args = append(args, params.Name)
 		argIdx++
 	}
 	if params.NamePattern != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'name' ILIKE $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'name' ILIKE $%d", argIdx)
 		args = append(args, params.NamePattern)
 		argIdx++
 	}
 	if params.Namespace != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'namespace' = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'namespace' = $%d", argIdx)
 		args = append(args, params.Namespace)
 		argIdx++
 	}
 	if params.Cluster != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'cluster' = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'cluster' = $%d", argIdx)
 		args = append(args, params.Cluster)
 		argIdx++
 	}
@@ -3965,30 +3967,40 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 		for i, nt := range params.NodeTypes {
 			nodeTypeStrings[i] = string(nt)
 		}
-		query += fmt.Sprintf(" AND node_type = ANY($%d::text[])", argIdx)
+		whereClause += fmt.Sprintf(" AND node_type = ANY($%d::text[])", argIdx)
 		args = append(args, pq.Array(nodeTypeStrings))
 		argIdx++
 	}
 	if params.Source != "" {
-		query += fmt.Sprintf(" AND source = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND source = $%d", argIdx)
 		args = append(args, params.Source)
 		argIdx++
 	}
 	if len(params.AccountIDs) > 0 {
-		query += fmt.Sprintf(" AND cloud_account_id = ANY($%d::uuid[])", argIdx)
+		whereClause += fmt.Sprintf(" AND cloud_account_id = ANY($%d::uuid[])", argIdx)
 		args = append(args, pq.Array(params.AccountIDs))
 		argIdx++
 	}
 	if len(params.Labels) > 0 {
 		for key, value := range params.Labels {
-			query += fmt.Sprintf(" AND labels->>$%d = $%d", argIdx, argIdx+1)
+			whereClause += fmt.Sprintf(" AND labels->>$%d = $%d", argIdx, argIdx+1)
 			args = append(args, key, value)
 			argIdx += 2
 		}
 	}
 
-	query += " ORDER BY node_type, query_attributes->>'name'"
-	query += fmt.Sprintf(" LIMIT $%d", argIdx)
+	// True total of matching graph nodes (pre-LIMIT). Lets callers tell a "Found N
+	// (showing M)" page apart from a complete result instead of silently sampling.
+	var totalCount int
+	if err := s.dbManager.QueryRowAndScan(&totalCount,
+		"SELECT COUNT(*) FROM knowledge_graph_node WHERE "+whereClause, args...); err != nil {
+		return nil, fmt.Errorf("failed to count search nodes: %w", err)
+	}
+
+	query := "SELECT id, node_type, COALESCE(source, '') AS source, query_attributes, labels, properties, cloud_account_id" +
+		" FROM knowledge_graph_node WHERE " + whereClause +
+		" ORDER BY node_type, query_attributes->>'name'" +
+		fmt.Sprintf(" LIMIT $%d", argIdx)
 	args = append(args, limit)
 
 	rows, err := s.dbManager.Query(query, args...)
@@ -4046,6 +4058,9 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 	if results == nil {
 		results = []SearchNodeResult{}
 	}
+	// Graph-node rows returned before any synth-Pod merge below, so we can add
+	// the appended Pods onto the COUNT (Pods aren't in knowledge_graph_node).
+	graphResultCount := len(results)
 
 	// Synth Pod search. Pods are not in knowledge_graph_node, so the
 	// SQL above never returns them. When the caller's node-type filter
@@ -4065,8 +4080,11 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 	}
 
 	return &SearchNodesResponse{
-		Nodes:      results,
-		TotalCount: len(results),
+		Nodes: results,
+		// True graph-node total (pre-LIMIT) plus any synth Pods appended above.
+		// When the graph result was capped, totalCount stays > len(results) so the
+		// caller can surface "showing M of N"; otherwise it equals len(results).
+		TotalCount: totalCount + (len(results) - graphResultCount),
 	}, nil
 }
 
