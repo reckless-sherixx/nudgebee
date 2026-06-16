@@ -365,7 +365,7 @@ func (m PrometheusExecuteTool) Call(nbRequestContext core.NbToolContext, input c
 	if allEmpty {
 		slog.Info("prometheus: all queries returned empty data", "query", input.Command, "parentAgentId", nbRequestContext.ParentAgentId)
 		return core.NBToolResponse{
-			Data:       fmt.Sprintf("No data found for query: %s. The metric may not exist, labels may be incorrect, or there is no data in the selected time range. Try verifying the metric name and labels using metrics_list or search_metrics tools.", input.Command),
+			Data:       fmt.Sprintf("No data found for query: %s. The metric may not exist, labels may be incorrect, or there is no data in the selected time range. If this is for a named workload, call metrics_series_match (workload + namespace) to get the families that actually have series for it, then rebuild the query. Otherwise use metrics_list/search_metrics for keyword discovery.", input.Command),
 			Status:     core.NBToolResponseStatusSuccess,
 			References: []core.NBToolResponseReference{core.GetNudgebeeUIReferenceForClusterDetails(nbRequestContext, []string{"monitoring", "query"}, "Query Prometheus", map[string]string{"tab": "4", "subtab": "2"}, input.Command)},
 		}, nil
