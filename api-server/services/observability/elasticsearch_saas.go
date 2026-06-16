@@ -39,6 +39,7 @@ const (
 	ElasticsearchApiKey         = "api_key"
 	ElasticsearchBearerToken    = "bearer_token"
 	ElasticsearchMetricsIndex   = "metrics_index"
+	ElasticsearchTLSSkipVerify  = "es_tls_skip_verify"
 )
 
 type ElasticsearchConfig struct {
@@ -53,6 +54,7 @@ type ElasticsearchConfig struct {
 	ApiKey         string // Base64-encoded id:api_key for ES API Key auth
 	BearerToken    string // OAuth2 / service-account bearer token
 	MetricsIndex   string // index pattern for utilisation queries; defaults to "*"
+	TLSSkipVerify  bool   // user-configured opt-in for self-signed certs
 }
 
 func GetElasticsearchConfig(ctx *security.RequestContext, accountId string) (*ElasticsearchConfig, error) {
@@ -108,6 +110,8 @@ func GetElasticsearchConfig(ctx *security.RequestContext, accountId string) (*El
 			cfg.BearerToken = value
 		case ElasticsearchMetricsIndex:
 			cfg.MetricsIndex = value
+		case ElasticsearchTLSSkipVerify:
+			cfg.TLSSkipVerify = strings.EqualFold(strings.TrimSpace(value), "true")
 		}
 	}
 
@@ -202,11 +206,13 @@ func basicAuthHeader(username, password string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 }
 
-// esHTTPClient is an HTTP client that skips TLS verification for user-managed
-// OpenSearch instances that commonly use self-signed certificates.
-var esHTTPClient = func() *http.Client {
+// esVerifyClient is the default HTTP client for ES/OpenSearch — TLS verified.
+var esVerifyClient = &http.Client{Timeout: 30 * time.Second}
+
+// esSkipVerifyClient is used only when the user has explicitly set es_tls_skip_verify=true.
+var esSkipVerifyClient = func() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // User-configured OpenSearch with self-signed certs
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // explicit user opt-in, default false
 	return &http.Client{
 		Transport: transport,
 		Timeout:   30 * time.Second,
@@ -248,7 +254,11 @@ func esRequest(method, rawURL, body string, cfg *ElasticsearchConfig) (*http.Res
 		req.Header.Set("Authorization", basicAuthHeader(cfg.Username, cfg.Password))
 	}
 
-	return esHTTPClient.Do(req)
+	client := esVerifyClient
+	if cfg.TLSSkipVerify {
+		client = esSkipVerifyClient
+	}
+	return client.Do(req)
 }
 
 // esRequestJSON executes an HTTP request with a JSON body to OpenSearch.
