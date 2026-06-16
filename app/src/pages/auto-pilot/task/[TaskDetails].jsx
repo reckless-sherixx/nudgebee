@@ -33,6 +33,7 @@ import { Stat } from '@ui/Stat';
 import k8sApi from '@api1/kubernetes';
 import apiUser from '@api1/user';
 import Text from '@shared/format/Text';
+import Memory from '@shared/format/Memory';
 import { Link } from '@ui/Link';
 import CustomTabs from '@shared/CustomTabs';
 import { hasWriteAccess } from '@lib/auth';
@@ -250,10 +251,18 @@ const AutoOptimizeTasks = ({ enableFilters = true, title, actions }) => {
         if (rec.allocated) {
           Object.keys(rec.allocated).forEach((key) => {
             if (rec.allocated[key] !== null || (rec.recommended && rec.recommended[key] !== null)) {
+              const resourceTitle = titleCase(`${resource} ${key}`);
+              const allocatedValue = rec.allocated[key] ?? '-';
+              const recommendedValue = rec.recommended ? rec.recommended[key] ?? '-' : '-';
+              const isMemory = resource === 'memory';
               configs.push([
-                { text: titleCase(`${resource} ${key}`) },
-                { text: rec.allocated[key] ?? '-' },
-                { text: rec.recommended ? rec.recommended[key] ?? '-' : '-' },
+                { text: resourceTitle },
+                isMemory && !isNaN(Number(allocatedValue))
+                  ? { component: <Memory value={Number(allocatedValue)} sourceUnit='bytes' targetUnit='mb' /> }
+                  : { text: allocatedValue },
+                isMemory && !isNaN(Number(recommendedValue))
+                  ? { component: <Memory value={Number(recommendedValue)} sourceUnit='bytes' targetUnit='mb' /> }
+                  : { text: recommendedValue },
               ]);
             }
           });
