@@ -769,6 +769,7 @@ const KubernetesEventsTable = ({
                 {isTroubleshootPage && account && (
                   <Text value={`acc: ${account?.label || account?.account_name || item.account_id}`} secondaryText showAutoEllipsis />
                 )}
+                {item.subject_owner && <Text value={`workload: ${item.subject_owner}`} secondaryText showAutoEllipsis />}
                 {item.subject_namespace && <Text value={`${namespaceLabel}: ${item.subject_namespace}`} secondaryText showAutoEllipsis />}
               </Box>
             ),
