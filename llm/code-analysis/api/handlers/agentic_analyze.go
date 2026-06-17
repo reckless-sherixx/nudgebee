@@ -223,7 +223,7 @@ type AnalysisResult struct {
 
 	// PIPELINE STATUS FIELDS - Expose review/build/fix details for transparency
 	RequiresFix        bool           `json:"requires_fix,omitempty"`
-	ExecutionStatus    string         `json:"execution_status,omitempty"`    // success, failed, partial_success, no_op (followup-only)
+	ExecutionStatus    string         `json:"execution_status,omitempty"`    // success, failed, partial_success, no_op (already-resolved / nothing to apply — fix flow & followup)
 	ExecutionSummary   string         `json:"execution_summary,omitempty"`   // CodeFixer's summary of what it did
 	FilesModified      any            `json:"files_modified,omitempty"`      // List of files the fixer changed
 	VerificationPassed any            `json:"verification_passed,omitempty"` // Whether lint/build passed
