@@ -1601,16 +1601,11 @@ func (ah *AgenticAnalyzeHandler) performFollowupAnalysis(ctx context.Context, re
 		// git clone requires the target to not exist, so use a subdir of the temp dir
 		workspaceDir = fmt.Sprintf("%s/repo", tempDir)
 
-		// Clone the repository
-		tokenUser := "x-access-token"
-		if provider == "gitlab" {
-			tokenUser = "oauth2"
-		}
-		cloneURL := req.GitRepository.URL
-		if gitToken != "" && strings.HasPrefix(cloneURL, "https://") {
-			// Inject token into URL for authenticated clone
-			cloneURL = strings.Replace(cloneURL, "https://", fmt.Sprintf("https://%s:%s@", tokenUser, gitToken), 1)
-		}
+		// Clone the repository. InjectTokenIntoURL embeds the token (and picks the
+		// provider-appropriate username) so origin carries auth for the followup
+		// agent's subsequent pushes — the same shared primitive the orchestrator push
+		// path uses, so both PR flows authenticate identically.
+		cloneURL := git.InjectTokenIntoURL(req.GitRepository.URL, gitToken)
 
 		cloneCmd := exec.CommandContext(ctx, "git", "clone", "--depth", "50", "--branch", branch, cloneURL, workspaceDir)
 		cloneOutput, cloneErr := cloneCmd.CombinedOutput()

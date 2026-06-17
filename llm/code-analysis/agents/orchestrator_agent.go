@@ -1531,17 +1531,46 @@ func (a *OrchestratorAgent) createPullRequest(ctx context.Context, sessionCtx *s
 		"commits":     logResult.Result,
 	})
 
-	// Push new branch to origin
+	// Determine the push target. The CLI tool only injects a token for `gh` commands,
+	// never for plain `git push`, and the clone-time origin URL is not guaranteed to
+	// carry a token — without auth, `git push` prompts for a username and dies with
+	// "could not read Username for 'https://github.com': No such device or address".
+	//
+	// Push DIRECTLY to a token-embedded URL rather than mutating origin: worktrees from
+	// one bare clone share the base repo's .git/config, so `git remote set-url` would
+	// race across concurrent analyses. Pushing to an explicit URL is stateless and
+	// thread-safe. Prefer the request's repo URL; fall back to the configured origin
+	// (a read-only lookup, no config mutation).
+	pushTarget := "origin"
+	if sessionCtx.Credentials != nil && sessionCtx.Credentials.Token != "" {
+		repoURL := ""
+		if sessionCtx.RepoContext != nil {
+			repoURL = sessionCtx.RepoContext.URL
+		}
+		if repoURL == "" {
+			originResult := cliTool.Execute(ctx, map[string]any{
+				"command":           "git remote get-url origin",
+				"working_directory": actualRepoDir,
+			})
+			if originResult.Status == "success" {
+				repoURL = git.StripURLUserinfo(strings.TrimSpace(a.extractCLIOutput(originResult)))
+			}
+		}
+		if repoURL != "" {
+			pushTarget = git.InjectTokenIntoURL(repoURL, sessionCtx.Credentials.Token)
+		}
+	}
+
+	// Push new branch to origin. Log the token-free target so credentials never hit logs.
+	cleanPushTarget := git.StripURLUserinfo(pushTarget)
 	a.logger.Log(common.EventStepStart, "Pushing branch to origin", map[string]any{
 		"branch_name":   branchName,
-		"command":       fmt.Sprintf("git push -u origin %s", branchName),
+		"command":       fmt.Sprintf("git push %s %s", cleanPushTarget, branchName),
 		"workspace_dir": a.workspaceDir,
 	})
 
-	// Reuse the repository helper variables from above
-
 	pushResult := cliTool.Execute(ctx, map[string]any{
-		"command":           fmt.Sprintf("git push -u origin %s", branchName),
+		"command":           fmt.Sprintf("git push %s %s", pushTarget, branchName),
 		"working_directory": actualRepoDir,
 	})
 
