@@ -1077,37 +1077,15 @@ rules:
           statistic: "Average"
           start_time_offset: "-15m"
           end_time_offset: "+5m"
-      - name: "get_task_logs_on_any_event"
-        type: "aws_get_log"
-        description: "Fetch recent logs for the task."
-        params:
-          log_group_name: | # Assumes log group name convention or derives from task def (if action enhanced)
-            {{ $logGroup := "" }}
-            {{ $container0 := (index (index .Detail "containers") 0) }}
-            {{ if $container0 }}
-              {{ $logConfig := (index $container0 "logConfiguration") }}
-              {{ if $logConfig }}
-                {{ $logDriverConfig := (index $logConfig "logDriverConfig") }}
-                {{ if $logDriverConfig }}
-                  {{ $options := (index $logDriverConfig "options") }}
-                  {{ if $options }}
-                    {{ $awslogsGroup := (index $options "awslogs-group") }}
-                    {{ if and (not (isNil $awslogsGroup)) (ne (str $awslogsGroup) "") }}
-                      {{ $logGroup = str $awslogsGroup }}
-                    {{ end }}
-                  {{ end }}
-                {{ end }}
-              {{ end }}
-            {{ end }}
-            {{ if eq $logGroup "" }}
-              {{ $logGroup = printf "/ecs/%s" (index (splitList "/" (index ((index .Detail "taskDefinitionArn") | splitList ":") 5)) 1) }}
-            {{ else }}
-              {{/* $logGroup is already set */}}
-            {{ end }}
-            {{ $logGroup }}
-          query: "fields @timestamp, @message | sort @timestamp desc | limit 50" # Fetch fewer logs for generic events
-          start_time_offset: "-15m"
-          end_time_offset: "+5m"
+      # NOTE: get_task_logs is intentionally NOT run here. Fetching logs requires a
+      # CloudWatch Logs Insights query (StartQuery + 3s poll loop, up to 60s) which
+      # dominates per-event processing time. Running it on EVERY task state change
+      # (the vast majority are healthy RUNNING/PENDING/clean-STOP transitions) was the
+      # primary throughput bottleneck for the EventBridge SQS consumer. Logs are only
+      # useful on FAILURE, and failing stops are already covered with richer log
+      # queries by the dedicated rules: ECS_Task_Stopped_Unexpectedly (non-zero exit),
+      # ECS_Task_Stopped_OutOfMemory, ECS_Task_Stopped_CannotPullContainerError, and
+      # the ELB-health-check stop rule.
 
   # Rule for all ECS Service or Deployment State Change events
   - name: "ECS_Service_All_Events_EventBridge"
