@@ -3206,6 +3206,13 @@ actions:
       kind: "synchronous"
       handler: '{{SERVICE_API_SERVER_URL}}/rpc/user'
       forward_client_headers: true
+      # Identity-scoped, cross-tenant action: lists the tenants the
+      # authenticated user belongs to (handler filters by username). Must stay
+      # reachable even when the user holds no role in the active tenant —
+      # otherwise the Switch-Tenant modal can't show them a tenant to switch to
+      # (chicken-and-egg lockout). The gateway skips its tenant-role gate for
+      # tenant_agnostic actions. See forwardAction in src/lib/rpcGateway.ts.
+      tenant_agnostic: true
       headers:
         - name: X-ACTION-TOKEN
           value_from_env: ACTION_API_SERVER_TOKEN
