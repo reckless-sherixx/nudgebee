@@ -189,6 +189,6 @@ func (m *MockWorkflowStore) SetDraftVersionID(ctx context.Context, tenantID, acc
 func (m *MockWorkflowStore) UpdateVersionMetadata(ctx context.Context, workflowID string, versionNumber int, name, description *string) (*model.WorkflowVersion, error) {
 	return nil, nil
 }
-func (m *MockWorkflowStore) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID string, status model.WorkflowStatus) (bool, error) {
+func (m *MockWorkflowStore) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID, updatedBy string, status model.WorkflowStatus) (bool, error) {
 	return false, nil
 }

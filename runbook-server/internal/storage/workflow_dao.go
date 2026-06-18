@@ -1468,7 +1468,7 @@ func (s *WorkflowDao) SetDraftVersionID(ctx context.Context, tenantID, accountID
 // Returns wasLive so the caller (service layer) knows whether to re-register
 // scheduled / webhook triggers — the runtime gate uses live_version.status, so
 // flipping the live version's status is what makes triggers (un)register.
-func (s *WorkflowDao) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID string, status model.WorkflowStatus) (wasLive bool, err error) {
+func (s *WorkflowDao) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID, updatedBy string, status model.WorkflowStatus) (wasLive bool, err error) {
 	if tenantID == "" || accountID == "" {
 		return false, fmt.Errorf("tenantID and accountID must not be empty")
 	}
@@ -1520,9 +1520,18 @@ func (s *WorkflowDao) UpdateVersionStatus(ctx context.Context, tenantID, account
 		return false, fmt.Errorf("failed to check live-version match: %w", err)
 	}
 	if wasLive {
+		// Bump updated_at/updated_by so the listing's "Updated" reflects a
+		// user-initiated pause/resume — V758 dropped the auto-bump trigger, and
+		// an Active↔Paused flip is a genuine user action (not an execution-status
+		// write), so it belongs on the same audit footing as a Definition edit.
+		// Empty updatedBy → nil-UUID system user (background / migration paths).
+		actor := updatedBy
+		if actor == "" {
+			actor = "00000000-0000-0000-0000-000000000000"
+		}
 		if _, err = tx.ExecContext(ctx, `
-			UPDATE workflows SET status = $1 WHERE id = $2 AND tenant_id = $3 AND account_id = $4
-		`, status, workflowID, tenantID, accountID); err != nil {
+			UPDATE workflows SET status = $1, updated_at = now(), updated_by = $2 WHERE id = $3 AND tenant_id = $4 AND account_id = $5
+		`, status, actor, workflowID, tenantID, accountID); err != nil {
 			return false, fmt.Errorf("failed to mirror status onto workflow row: %w", err)
 		}
 	}

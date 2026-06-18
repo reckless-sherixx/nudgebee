@@ -3066,7 +3066,7 @@ func (s *Service) applyStatusToLiveVersion(ctx *security.RequestContext, account
 	if wf.LiveVersionID == nil || *wf.LiveVersionID == "" {
 		return s.store.UpdateWorkflowStatus(ctx.GetContext(), tenantId, accountId, id, status)
 	}
-	if _, err := s.store.UpdateVersionStatus(ctx.GetContext(), tenantId, accountId, id, *wf.LiveVersionID, status); err != nil {
+	if _, err := s.store.UpdateVersionStatus(ctx.GetContext(), tenantId, accountId, id, *wf.LiveVersionID, ctx.GetSecurityContext().GetUserId(), status); err != nil {
 		return fmt.Errorf("failed to update live version status: %w", err)
 	}
 	return nil
@@ -4438,7 +4438,7 @@ func (s *Service) UpdateWorkflowVersionStatus(ctx *security.RequestContext, acco
 		}
 		return nil, err
 	}
-	wasLive, err := s.store.UpdateVersionStatus(ctx.GetContext(), tenantId, accountId, id, target.ID, status)
+	wasLive, err := s.store.UpdateVersionStatus(ctx.GetContext(), tenantId, accountId, id, target.ID, ctx.GetSecurityContext().GetUserId(), status)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update version status: %w", err)
 	}
