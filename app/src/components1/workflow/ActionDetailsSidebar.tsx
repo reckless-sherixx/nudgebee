@@ -532,6 +532,10 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
   const [slackJoinChannelOptions, setSlackJoinChannelOptions] = useState<{ label: string; value: string }[]>([]);
   const [slackJoinChannelLoading, setSlackJoinChannelLoading] = useState(false);
 
+  // State for Google Chat join_space space dropdown (google_chat.join_space task)
+  const [googleChatJoinSpaceOptions, setGoogleChatJoinSpaceOptions] = useState<{ label: string; value: string }[]>([]);
+  const [googleChatJoinSpaceLoading, setGoogleChatJoinSpaceLoading] = useState(false);
+
   // State for Approval task IM channel dropdown (core.approval task)
   const [approvalChannelOptions, setApprovalChannelOptions] = useState<{ label: string; value: string }[]>([]);
   const [approvalChannelLoading, setApprovalChannelLoading] = useState(false);
@@ -1108,6 +1112,9 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
   // Check if this is a Slack join_channel task
   const isSlackJoinChannelTask = selectedActionType === 'slack.join_channel';
 
+  // Check if this is a Google Chat join_space task
+  const isGoogleChatJoinSpaceTask = selectedActionType === 'google_chat.join_space';
+
   // Fetch channels for Slack join_channel task — provider is hardcoded to slack
   useEffect(() => {
     if (!isSlackJoinChannelTask) {
@@ -1134,6 +1141,43 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
         setSlackJoinChannelLoading(false);
       });
   }, [selectedActionType]);
+
+  // Fetch spaces for Google Chat join_space task — provider is hardcoded to google_chat.
+  // The `active` flag drops a stale resolution if the user switches action type before the
+  // fetch settles, so a previous task's spaces never land in this one's dropdown.
+  useEffect(() => {
+    let active = true;
+    if (!isGoogleChatJoinSpaceTask) {
+      setGoogleChatJoinSpaceOptions([]);
+      return;
+    }
+
+    setGoogleChatJoinSpaceLoading(true);
+    apiAccount
+      .getNotificationChannelList('google_chat')
+      .then((res: any) => {
+        if (!active) return;
+        const response = res?.data?.data || [];
+        const spaces = response.map((item: any) => ({
+          label: item.name,
+          value: item.id,
+        }));
+        setGoogleChatJoinSpaceOptions(spaces);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error('Failed to fetch Google Chat spaces for join_space:', error);
+        setGoogleChatJoinSpaceOptions([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setGoogleChatJoinSpaceLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isGoogleChatJoinSpaceTask]);
 
   // Check if this is an Approval task
   const isApprovalTask = selectedActionType === 'core.approval';
@@ -2094,15 +2138,18 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
         }
       }
 
-      // Special handling for Slack join_channel task — dynamic channel dropdown.
-      // HybridField auto-detects whether the saved value is a channel id (Select
-      // mode, shows channel name) or a {{ }} template (Expression mode), so the
-      // field renders consistently when the task is closed and reopened.
-      if (isSlackJoinChannelTask && fieldName === 'channel_id') {
+      // Special handling for the join tasks (slack.join_channel / google_chat.join_space)
+      // — dynamic channel/space dropdown. HybridField auto-detects whether the saved
+      // value is an id (Select mode, shows the name) or a {{ }} template (Expression
+      // mode), so the field renders consistently when the task is closed and reopened.
+      if ((isSlackJoinChannelTask || isGoogleChatJoinSpaceTask) && fieldName === 'channel_id') {
+        const joinOptions = isGoogleChatJoinSpaceTask ? googleChatJoinSpaceOptions : slackJoinChannelOptions;
+        const joinLoading = isGoogleChatJoinSpaceTask ? googleChatJoinSpaceLoading : slackJoinChannelLoading;
+        const joinNoun = isGoogleChatJoinSpaceTask ? 'space' : 'channel';
         const getChannelPlaceholder = () => {
-          if (slackJoinChannelLoading) return 'Loading channels...';
-          if (slackJoinChannelOptions.length === 0) return 'No channels available';
-          return 'Select channel';
+          if (joinLoading) return `Loading ${joinNoun}s...`;
+          if (joinOptions.length === 0) return `No ${joinNoun}s available`;
+          return `Select ${joinNoun}`;
         };
 
         return (
@@ -2129,8 +2176,8 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
                 disabled={isReadOnly || viewOnlyMode}
                 error={validationErrors[fieldName] || ''}
                 required={isRequired}
-                options={slackJoinChannelOptions}
-                optionsLoading={slackJoinChannelLoading}
+                options={joinOptions}
+                optionsLoading={joinLoading}
                 previousTasks={previousTasks}
                 workflowInputs={workflowInputs}
                 workflowConfigs={workflowConfigs}
