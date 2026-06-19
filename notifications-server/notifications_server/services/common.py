@@ -1389,7 +1389,8 @@ class CommonService:
         return error_map.get(error_msg, f"Failed to fetch thread: {error_msg}")
 
     def get_channel_and_ts_from_sent_notifications(self, conversation_id):
-        fingerprint = conversation_id.split("-", 1)[1]
+        parts = conversation_id.split("-", 1)
+        fingerprint = parts[1] if len(parts) > 1 else parts[0]
         try:
             notification = (
                 self.session.query(SentNotifications)
