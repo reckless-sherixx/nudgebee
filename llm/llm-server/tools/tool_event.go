@@ -154,7 +154,7 @@ func (m EventsExecuteTool) processRowWithMessages(data map[string]any, i, c int,
 		evidences := []events.Evidence{}
 		if ok {
 			if err := common.UnmarshalJson([]byte(evidencesStr), &evidences); err != nil {
-				slog.Error("Error unmarshaling JSON:", "error", err)
+				slog.Error("unmarshaling JSON", "error", err)
 			}
 		}
 		for _, evidence := range evidences {
@@ -345,22 +345,22 @@ func (m EventsExecuteTool) processRowWithMessages(data map[string]any, i, c int,
 				}
 				decodedData, err := base64.StdEncoding.DecodeString(encodedString)
 				if err != nil {
-					slog.Error("Error decoding Base64 string:", "error", err)
+					slog.Error("decoding Base64 string", "error", err)
 				} else {
 					reader := bytes.NewReader(decodedData)
 					gzipReader, err := gzip.NewReader(reader)
 					if err != nil {
-						slog.Error("Error creating gzip reader:", "error", err)
+						slog.Error("creating gzip reader", "error", err)
 					} else {
 						var buf bytes.Buffer
 						_, err = io.Copy(&buf, gzipReader)
 						if err != nil {
-							slog.Error("Error decompressing data:", "error", err)
+							slog.Error("decompressing data", "error", err)
 						} else {
 							evidenceData = buf.String()
 						}
 						if err := gzipReader.Close(); err != nil {
-							slog.Error("Error closing gzip reader:", "error", err)
+							slog.Error("closing gzip reader", "error", err)
 						}
 					}
 				}
@@ -385,7 +385,7 @@ func (m EventsExecuteTool) processRowWithMessages(data map[string]any, i, c int,
 				decodedDataMap := map[string]any{}
 				err := common.UnmarshalJson([]byte(jsonString), &decodedDataMap)
 				if err != nil {
-					slog.Error("Error decoding json string:", "error", err)
+					slog.Error("decoding json string", "error", err)
 					investigateData.LogData = investigateData.LogData + "\n" + dataStr
 				} else {
 					if dataAny, ok := decodedDataMap["data"]; ok {
@@ -444,7 +444,7 @@ func (m EventsExecuteTool) processRowWithMessages(data map[string]any, i, c int,
 				if evidenceStr, ok := evidence.Data.(string); ok {
 					parsed, err := common.UnmarshalJsonAsMap([]byte(evidenceStr))
 					if err != nil {
-						slog.Error("Error unmarshaling JSON:", "error", err, "evidence-data", evidence.Data)
+						slog.Error("unmarshaling JSON", "error", err, "evidence-data", evidence.Data)
 					} else {
 						evidenceDataJson = parsed
 					}

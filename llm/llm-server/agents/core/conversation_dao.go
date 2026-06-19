@@ -2406,7 +2406,7 @@ func (chat *ConversationDao) GetConversationTokenUsage(conversationId string) ([
 	rows, err := chat.dbManager.Db.Queryx(query, conversationId)
 
 	if err != nil {
-		slog.Error("Error executing query", "error", err)
+		slog.Error("executing query", "error", err)
 		return nil, err
 	}
 	defer func() {
@@ -2516,7 +2516,7 @@ func (chat *ConversationDao) GetConversationTokenUsageDetailed(conversationId st
 
 	rows, err := chat.dbManager.Db.Queryx(query, conversationId)
 	if err != nil {
-		slog.Error("Error executing detailed token usage query", "error", err)
+		slog.Error("executing detailed token usage query", "error", err)
 		return nil, err
 	}
 	defer func() {
@@ -2642,7 +2642,7 @@ func (chat *ConversationDao) GetConversationToolCallsStats(conversationId string
 
 	err := chat.dbManager.Db.Get(&stats, query, conversationId)
 	if err != nil {
-		slog.Error("Error getting tool calls stats", "error", err)
+		slog.Error("getting tool calls stats", "error", err)
 		return ToolCallsStats{}, err
 	}
 
@@ -2697,7 +2697,7 @@ func (chat *ConversationDao) GetConversationTimeBreakdown(conversationId string)
 
 	err := chat.dbManager.Db.Get(&result, query, conversationId)
 	if err != nil {
-		slog.Error("Error getting conversation time breakdown", "error", err)
+		slog.Error("getting conversation time breakdown", "error", err)
 		return TimeBreakdown{}, err
 	}
 

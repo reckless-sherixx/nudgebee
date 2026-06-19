@@ -1079,7 +1079,7 @@ func tryWithModel(rc *retryContext) (*llms.ContentResponse, error) {
 		return nil, err
 	}
 	if completion == nil || completion.Choices == nil {
-		err = fmt.Errorf("LLM returned invalid completion response")
+		err = fmt.Errorf("llm returned invalid completion response")
 		rc.lastErr = err
 		errorMsg := fmt.Sprintf("[%s] %s", rc.currentModel, safeError(err))
 		rc.errorHistory = append(rc.errorHistory, errorMsg)
@@ -1087,7 +1087,7 @@ func tryWithModel(rc *retryContext) (*llms.ContentResponse, error) {
 		return nil, err
 	}
 	if len(completion.Choices) == 0 {
-		err = fmt.Errorf("LLM returned empty choices in completion response")
+		err = fmt.Errorf("llm returned empty choices in completion response")
 		rc.lastErr = err
 		errorMsg := fmt.Sprintf("[%s] %s", rc.currentModel, safeError(err))
 		rc.errorHistory = append(rc.errorHistory, errorMsg)
@@ -2753,7 +2753,7 @@ func execLLMIntegrationConfigQuery(ctx *security.RequestContext, dbManager *comm
 		slog.Debug("Found LLM integration config value", "id", logId, "integrationId", id, "key", name.String, "hasValue", plain != "", "isEncrypted", isEncrypted.Valid && isEncrypted.Bool)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("Error iterating LLM integration config rows", "error", err, "id", logId)
+		slog.Error("iterating LLM integration config rows", "error", err, "id", logId)
 		return nil, err
 	}
 	if !foundRow {
