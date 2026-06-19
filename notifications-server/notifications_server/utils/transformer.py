@@ -33,6 +33,8 @@ ACTION_TRIGGER_PLAYBOOK = "trigger_playbook"
 ACTION_LINK = "link"
 SlackBlock = Dict[str, Any]
 MAX_BLOCK_CHARS = 3000
+# Maximum number of data rows rendered in a markdown table before truncation.
+MAX_MARKDOWN_TABLE_ROWS = 10
 SLACK_SIGNIN_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "signing_secret")
 
 try:
@@ -752,7 +754,7 @@ class Transformer:
     @staticmethod
     def json_to_markdown_table(data):
         headers = data["headers"]
-        rows = data["rows"][:7]  # limit to 10 rows
+        rows = data["rows"][:MAX_MARKDOWN_TABLE_ROWS]  # limit to MAX_MARKDOWN_TABLE_ROWS rows
 
         if len(headers) == 2:
             table_rows: List[str] = []
