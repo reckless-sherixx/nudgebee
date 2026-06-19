@@ -47,6 +47,9 @@ const ToolMetricsLabelsList = "metrics_labels_list"
 const ToolQueryPrometheus = "prometheus_execute"
 const ToolSearchMetrics = "search_metrics"
 
+// maxPrometheusMetricsInResponse caps the number of metrics returned by metrics_list when LLM filtering is active.
+const maxPrometheusMetricsInResponse = 100
+
 func init() {
 	core.RegisterNBToolFactory(ToolQueryPrometheus, func(accountId string) (core.NBTool, error) {
 		return PrometheusExecuteTool{}, nil
@@ -820,9 +823,9 @@ func filterMetricsWithLLM(nbRequestContext core.NbToolContext, userQuery string,
 		}
 	}
 
-	// Limit to top 100 results
-	if len(filteredMetrics) > 100 {
-		filteredMetrics = filteredMetrics[:100]
+	// Limit to top maxPrometheusMetricsInResponse results
+	if len(filteredMetrics) > maxPrometheusMetricsInResponse {
+		filteredMetrics = filteredMetrics[:maxPrometheusMetricsInResponse]
 	}
 
 	return filteredMetrics, nil
