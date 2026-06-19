@@ -101,8 +101,9 @@ const AgentHealth = () => {
   }
 
   useEffect(() => {
-    const accountType = selectedCluster?.cloud_provider || selectedCluster?.type || agentType;
-
+    if (!router.query.accountId) return;
+    if (!selectedCluster?.cloud_provider && !selectedCluster?.type) return;
+    const accountType = selectedCluster?.cloud_provider || selectedCluster?.type;
     const query = {
       accountId: router.query.accountId,
       type: accountType,
@@ -114,15 +115,16 @@ const AgentHealth = () => {
         if (res?.error) {
           return;
         }
-        setData(res?.data ?? []);
-        let result = res.data;
+        const rawData = Array.isArray(res?.data) ? res.data : [];
+        setData(rawData);
+        let result = rawData;
         let tableData = [];
         let scheduledJobsTableData = [];
         let disconnectedService = [];
         let isAgentActive = false;
         let agentType = 'k8s';
 
-        for (let acc of result || []) {
+        for (let acc of result) {
           agentType = acc.type;
           isAgentActive = acc.status === 'CONNECTED';
           const latestVersionsData = latestVersionsRef.current;
@@ -258,7 +260,7 @@ const AgentHealth = () => {
         if (res?.error) {
           return;
         }
-        setProxyData(res?.data ?? []);
+        setProxyData(Array.isArray(res?.data) ? res.data : []);
       })
       .finally(() => {
         setProxyLoading(false);
