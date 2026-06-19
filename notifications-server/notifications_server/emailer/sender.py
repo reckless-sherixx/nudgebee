@@ -58,6 +58,7 @@ def _is_valid_smtp_params(params):
         return False
     if not is_valid_port(port):
         LOG.exception("port %s is not valid ", port)
+        return False
     return True
 
 

@@ -649,7 +649,10 @@ class Transformer:
             return result["file"]["permalink"]
 
     @staticmethod
-    def prepare_slack_text(slack_app, installation, message: str, max_file_size_kb: int, files: List[FileBlock] = []):
+    def prepare_slack_text(
+        slack_app, installation, message: str, max_file_size_kb: int, files: Optional[List[FileBlock]] = None
+    ):
+        files = files or []
         if files:
             # it's a little annoying but it seems like files need to be referenced in `title` and not just `blocks`
             # in order to be actually shared. well, I'm actually not sure about that, but when I tried adding the files
