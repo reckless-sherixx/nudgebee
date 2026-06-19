@@ -2753,7 +2753,7 @@ func execLLMIntegrationConfigQuery(ctx *security.RequestContext, dbManager *comm
 		slog.Debug("Found LLM integration config value", "id", logId, "integrationId", id, "key", name.String, "hasValue", plain != "", "isEncrypted", isEncrypted.Valid && isEncrypted.Bool)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("Error iterating LLM integration config rows", "error", err, "id", logId)
+		slog.Error("iterating LLM integration config rows", "error", err, "id", logId)
 		return nil, err
 	}
 	if !foundRow {
