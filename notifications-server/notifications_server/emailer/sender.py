@@ -51,13 +51,13 @@ def _is_valid_smtp_params(params):
     port, server, email, password, _ = params
     for value in (server, email, password):
         if value is None:
-            LOG.exception("Server/email/password should not be none")
+            LOG.error("Server/email/password should not be none")
             return False
     if not isinstance(server, str):
-        LOG.exception("server %s is not instance ", server)
+        LOG.error("server %s is not instance ", server)
         return False
     if not is_valid_port(port):
-        LOG.exception("port %s is not valid ", port)
+        LOG.error("port %s is not valid ", port)
     return True
 
 
