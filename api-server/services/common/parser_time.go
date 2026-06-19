@@ -61,7 +61,7 @@ func ParseTimeValue(value any) (time.Time, error) {
 			// It might be a float, try that.
 			unixFloat, errFloat := v.Float64()
 			if errFloat != nil {
-				return time.Time{}, fmt.Errorf("could not parse json.Number '%s' as a number: %v", v, err)
+				return time.Time{}, fmt.Errorf("could not parse json.Number '%s' as a number: %w", v, errFloat)
 			}
 			return ParseUnixTimestamp(int64(unixFloat)), nil
 		}

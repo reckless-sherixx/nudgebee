@@ -17,11 +17,11 @@ def setup_logger() -> None:
                 logging.config.dictConfig(config)
                 logging.info("Logging configuration loaded successfully.")
         except json.JSONDecodeError as e:
-            logging.warn(f"Error decoding JSON from file: {e}")
+            logging.warning(f"Error decoding JSON from file: {e}")
             logging.info("Loading default logging configuration.")
             load_default_config()
         except Exception as e:
-            logging.warn(f"Error reading the logging configuration file: {e}")
+            logging.warning(f"Error reading the logging configuration file: {e}")
             logging.info("Loading default logging configuration.")
             load_default_config()
     else:
