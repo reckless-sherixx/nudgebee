@@ -1042,10 +1042,10 @@ class CommonService:
             "errors": errors,
         }
 
-    def post_slack_ephimeral_response(self, channel_id, team_id, user_id, message):
+    def post_slack_ephemeral_response(self, channel_id, team_id, user_id, message):
         bot = self.get_slack_installation(team_id)
         output_blocks = Transformer.to_slack(MarkdownBlock(text=message))
-        self.slack_app.client.post_ephimeral(
+        self.slack_app.client.post_ephemeral(
             text="message",
             channel_id=channel_id,
             user=user_id,

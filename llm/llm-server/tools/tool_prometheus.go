@@ -779,7 +779,7 @@ func filterMetricsWithLLM(nbRequestContext core.NbToolContext, userQuery string,
 	// Call LLM via the adapter
 	llmClient := core.GetLLMClient()
 	if llmClient == nil {
-		return nil, errors.New("LLM client not initialized")
+		return nil, errors.New("llm client not initialized")
 	}
 
 	response, err := llmClient.GenerateContent(
