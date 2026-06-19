@@ -1,19 +1,9 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-
-
-class PlatformInput(BaseModel):
-    platform: str = Field(..., description="Target platform")
-
-
-class HasuraActionPayload(BaseModel):
-    input: PlatformInput
-    session_variables: Dict[str, Any] = Field(default_factory=dict)
-
 
 from notifications_server import engine, sync_engine, slack_app, teams_app
 from notifications_server.configs.settings import settings
@@ -26,6 +16,16 @@ from notifications_server.schemas.message import (
 from notifications_server.services.common import CommonService
 from notifications_server.services.message import MessageService
 from notifications_server.services.rules import NotificationRulesService
+
+
+class PlatformInput(BaseModel):
+    platform: Literal["slack", "ms_teams", "google_chat"] = Field(..., description="Target platform")
+
+
+class HasuraActionPayload(BaseModel):
+    input: PlatformInput
+    session_variables: Dict[str, Any] = Field(default_factory=dict)
+
 
 LOG = logging.getLogger(__name__)
 
