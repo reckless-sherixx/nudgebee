@@ -317,7 +317,7 @@ const KubernetesNodesTable = ({ accountId, heading = 'All Nodes' }) => {
             acc.memory_allocatable += node?.meta?.memory_allocatable || 0;
             return acc;
           },
-          { cpu_capacity: 0, cpu_allocatable: 0, memory_capacity: 0, memory_allocatable: 0 }
+          { cpu_capacity: 0, cpu_allocatable: 0, memory_capacity: 0, memory_allocatable: 0 },
         );
       const newClusterUtilization = {
         count: fullNodeAggregateData.aggregate?.count || 0,
@@ -445,7 +445,7 @@ const KubernetesNodesTable = ({ accountId, heading = 'All Nodes' }) => {
                           value={Number(
                             (
                               (dataItem?.[0]?.drilldownQuery?.data?.cpu_capacity ?? 0) - (dataItem?.[0]?.drilldownQuery?.data?.cpu_allocatable ?? 0)
-                            ).toFixed(2)
+                            ).toFixed(2),
                           )}
                           largeVariant={true}
                           tooltipRequired={true}
@@ -483,7 +483,7 @@ const KubernetesNodesTable = ({ accountId, heading = 'All Nodes' }) => {
                         <ProgressBar
                           blueVarient={true}
                           capacity={dataItem[0].drilldownQuery?.memory_capacity ? (dataItem[0].drilldownQuery?.memory_capacity / 1024).toFixed(2) : 0}
-                          value={Number(((Number(r.values[0]) / (1024 * 1024 * 1024)) || 0).toFixed(2))}
+                          value={Number((Number(r.values[0]) / (1024 * 1024 * 1024) || 0).toFixed(2))}
                           largeVariant={true}
                           tooltipRequired={true}
                           showCapacity={false}
@@ -493,11 +493,13 @@ const KubernetesNodesTable = ({ accountId, heading = 'All Nodes' }) => {
                         <ProgressBar
                           blueVarient={true}
                           capacity={dataItem[0].drilldownQuery?.memory_capacity ? (dataItem[0].drilldownQuery?.memory_capacity / 1024).toFixed(2) : 0}
-                          value={Number((
-                            ((dataItem?.[0]?.drilldownQuery?.data?.memory_capacity ?? 0) -
-                              (dataItem?.[0]?.drilldownQuery?.data?.memory_allocatable ?? 0)) /
-                            1024 || 0
-                          ).toFixed(2))}
+                          value={Number(
+                            (
+                              ((dataItem?.[0]?.drilldownQuery?.data?.memory_capacity ?? 0) -
+                                (dataItem?.[0]?.drilldownQuery?.data?.memory_allocatable ?? 0)) /
+                                1024 || 0
+                            ).toFixed(2),
+                          )}
                           largeVariant={true}
                           tooltipRequired={true}
                           showCapacity={false}
@@ -1030,7 +1032,7 @@ function nodeDetailsFn(_accountId, drilldownQuery) {
             key={k}
             text={name}
             variant={'grey'}
-          />
+          />,
         );
       }
     }
@@ -1149,7 +1151,7 @@ function nodeDetailsFn(_accountId, drilldownQuery) {
             drilldownQuery?.data?.taints
               ?.split(',')
               .map((taint) => taint.split('='))
-              .reduce((a, v) => ({ ...a, [v[0]]: v[1] }), {})
+              .reduce((a, v) => ({ ...a, [v[0]]: v[1] }), {}),
           )}
         </Grid>
       </Grid>
