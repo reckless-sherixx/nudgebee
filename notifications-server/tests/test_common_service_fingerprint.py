@@ -10,9 +10,7 @@ def test_get_channel_and_ts_from_sent_notifications_no_delimiter():
     slack_app_mock = MagicMock()
     teams_app_mock = MagicMock()
 
-    service = CommonService(
-        engine=engine_mock, slack_app=slack_app_mock, teams_app=teams_app_mock
-    )
+    service = CommonService(engine=engine_mock, slack_app=slack_app_mock, teams_app=teams_app_mock)
 
     # Mock the database session and the SQLAlchemy query chain
     service.session = MagicMock()
@@ -46,9 +44,7 @@ def test_get_channel_and_ts_from_sent_notifications_with_delimiter():
     slack_app_mock = MagicMock()
     teams_app_mock = MagicMock()
 
-    service = CommonService(
-        engine=engine_mock, slack_app=slack_app_mock, teams_app=teams_app_mock
-    )
+    service = CommonService(engine=engine_mock, slack_app=slack_app_mock, teams_app=teams_app_mock)
 
     service.session = MagicMock()
     query_mock = MagicMock()

@@ -1391,7 +1391,7 @@ class CommonService:
     def get_channel_and_ts_from_sent_notifications(self, conversation_id):
         if not conversation_id or not isinstance(conversation_id, str):
             return None, None, None, None
-        
+
         parts = conversation_id.split("-", 1)
         fingerprint = parts[1] if len(parts) > 1 else parts[0]
         try:
