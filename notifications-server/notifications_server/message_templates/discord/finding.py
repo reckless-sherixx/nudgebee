@@ -77,14 +77,17 @@ def get_discord_finding_message(finding: Dict[str, Any]) -> Dict[str, Any]:
             evidence_type = evidence.get("type")
             if evidence_type == "table":
                 table_md = Transformer.json_to_markdown_table(data)
-                embed["fields"].append(
-                    {"name": data.get("table_name", "Data Table"), "value": table_md[:1024], "inline": False}
-                )
+                if table_md and table_md.strip():
+                    embed["fields"].append(
+                        {"name": data.get("table_name", "Data Table"), "value": table_md[:1024], "inline": False}
+                    )
             elif evidence_type in {"markdown", "header"}:
-                text = data.get("data", data) if isinstance(data, dict) else data
-                embed["fields"].append({"name": "Details", "value": str(text)[:1024], "inline": False})
+                text = str(data.get("data", data) if isinstance(data, dict) else data)
+                if text and text.strip():
+                    embed["fields"].append({"name": "Details", "value": text[:1024], "inline": False})
             elif evidence_type == "json" and is_cloud:
-                val = data.get("data", data) if isinstance(data, dict) else data
-                embed["fields"].append({"name": "Cloud Data", "value": _format_value(val)[:1024], "inline": False})
+                val = _format_value(data.get("data", data) if isinstance(data, dict) else data)
+                if val and val.strip():
+                    embed["fields"].append({"name": "Cloud Data", "value": val[:1024], "inline": False})
 
     return {"content": "", "embeds": [embed]}

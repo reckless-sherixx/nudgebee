@@ -1790,7 +1790,7 @@ const NotificationRuleModal: React.FC<NotificationRuleModalProps> = ({
               {activeChannel === 'discord' && (
                 <Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: ds.space[2], mb: ds.space[3] }}>
-                    <SafeIcon src={GChatIcon} alt='Discord' width={16} height={16} />
+                    <SafeIcon src={DiscordIcon} alt='Discord' width={16} height={16} />
                     <Typography sx={{ fontSize: 'var(--ds-text-body)', fontWeight: 'var(--ds-font-weight-semibold)', color: ds.gray[700] }}>
                       Discord Configuration
                     </Typography>
