@@ -127,8 +127,8 @@ func TestSecurityColumnsAreNotAggregated(t *testing.T) {
 // TestAggregateTablesHaveAggregatedColumns validates that every Aggregate table
 // has at least one IsAggregated column.
 func TestAggregateTablesHaveAggregatedColumns(t *testing.T) {
-	// llm_list_conversation_feedback is typed Aggregate but has no aggregated columns — known issue
-	knownMissing := map[string]bool{"llm_list_conversation_feedback": true}
+	// llm_conversation_feedback_v2 is typed Aggregate but has no aggregated columns — known issue
+	knownMissing := map[string]bool{"llm_conversation_feedback_v2": true}
 	for name, def := range table_metadata {
 		if def.Type != Aggregate {
 			continue
