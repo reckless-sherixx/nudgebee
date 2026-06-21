@@ -394,14 +394,14 @@ func (m PrometheusExecuteTool) executePromQl(nbRequestContext core.NbToolContext
 	}
 	endTime, err := time.Parse(time.RFC3339, endTimeStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("executePromQl: parse end_time: %w", err)
 	}
 	startTime := endTime.Add(-24 * time.Hour)
 	if configs["start_time"] != nil && configs["start_time"] != "" {
 		startTimeStr := configs["start_time"].(string)
 		startTime, err = time.Parse(time.RFC3339, startTimeStr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("executePromQl: parse start_time: %w", err)
 		}
 	}
 
@@ -433,12 +433,12 @@ func (m PrometheusExecuteTool) executePromQl(nbRequestContext core.NbToolContext
 	slog.Debug("prometheus query", "query", query, "start_time", startTimeString, "end_time", endTimeString)
 	response, err := relay.Execute(actionParam)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("executePromQl: relay execute: %w", err)
 	}
 	dataFromEvidence, err := m.getDataFromRelayPrometheusResponse(response)
 	if err != nil {
 		slog.Error("error marshaling JSON at Prometheus API call:", "error", err)
-		return nil, err
+		return nil, fmt.Errorf("executePromQl: parse relay response: %w", err)
 	}
 	slog.Debug("prometheus response data", "data", dataFromEvidence)
 	return dataFromEvidence, nil
@@ -486,12 +486,12 @@ func (m PrometheusExecuteTool) getDataFromRelayPrometheusResponse(relayResponse 
 	var dataList []map[string]any
 	if err := common.UnmarshalJson([]byte(evidenceData), &dataList); err != nil {
 		slog.Info("prometheus relay response, unable to unmarshal", "evidenceData", evidenceData)
-		return nil, err
+		return nil, fmt.Errorf("getDataFromRelayPrometheusResponse: unmarshal evidence data: %w", err)
 	}
 	seriesData, err := m.getMappedValuesFromDataList(dataList)
 	if err != nil {
 		slog.Info("prometheus relay response, unable to unmarshal", "datalist", dataList)
-		return nil, err
+		return nil, fmt.Errorf("getDataFromRelayPrometheusResponse: map values: %w", err)
 	}
 	return seriesData, nil
 }

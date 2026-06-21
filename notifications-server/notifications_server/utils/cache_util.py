@@ -1,5 +1,7 @@
 import time
 
+from notifications_server.configs.settings import settings
+
 
 class EventCache:
     _instance = None
@@ -55,7 +57,7 @@ class EventCache:
             entry = self.cache[thread_ts]
             timestamp = entry["timestamp"]
             current_time = time.time()
-            if current_time - timestamp <= 7200:
+            if current_time - timestamp <= settings.notifications.event_cache_ttl_seconds:
                 return entry
             else:
                 del self.cache[thread_ts]

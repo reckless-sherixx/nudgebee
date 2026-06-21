@@ -144,7 +144,7 @@ func (m *MockWorkflowStore) UpdateInternal(ctx context.Context, tenantID, accoun
 func (m *MockWorkflowStore) Delete(ctx context.Context, tenantID, accountID, id string) error {
 	return nil
 }
-func (m *MockWorkflowStore) UpdateWorkflowStatus(ctx context.Context, tenantID, accountID, id string, status model.WorkflowStatus) error {
+func (m *MockWorkflowStore) UpdateWorkflowStatus(ctx context.Context, tenantID, accountID, id, updatedBy string, status model.WorkflowStatus) error {
 	return nil
 }
 func (m *MockWorkflowStore) GetState(ctx context.Context, workflowID string) ([]model.WorkflowStateItem, error) {
@@ -180,7 +180,7 @@ func (m *MockWorkflowStore) GetLiveWorkflowVersion(ctx context.Context, workflow
 func (m *MockWorkflowStore) PublishVersion(ctx context.Context, workflowID, createdBy string, source model.WorkflowVersionSource, name, description *string, restoredFromVersion *int, status model.WorkflowStatus) (*model.WorkflowVersion, error) {
 	return &model.WorkflowVersion{ID: "mock-version-id", WorkflowID: workflowID, VersionNumber: 1, Source: source, Status: status}, nil
 }
-func (m *MockWorkflowStore) SetLiveVersion(ctx context.Context, tenantID, accountID, workflowID, versionID string) error {
+func (m *MockWorkflowStore) SetLiveVersion(ctx context.Context, tenantID, accountID, workflowID, versionID, updatedBy string) error {
 	return nil
 }
 func (m *MockWorkflowStore) SetDraftVersionID(ctx context.Context, tenantID, accountID, workflowID, versionID string) error {
@@ -189,6 +189,6 @@ func (m *MockWorkflowStore) SetDraftVersionID(ctx context.Context, tenantID, acc
 func (m *MockWorkflowStore) UpdateVersionMetadata(ctx context.Context, workflowID string, versionNumber int, name, description *string) (*model.WorkflowVersion, error) {
 	return nil, nil
 }
-func (m *MockWorkflowStore) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID string, status model.WorkflowStatus) (bool, error) {
+func (m *MockWorkflowStore) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID, updatedBy string, status model.WorkflowStatus) (bool, error) {
 	return false, nil
 }

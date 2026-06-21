@@ -7,6 +7,7 @@ import (
 	"nudgebee/tickets-server/models"
 	"nudgebee/tickets-server/services/ticket"
 	"nudgebee/tickets-server/utils"
+	"sort"
 	"strings"
 	"time"
 
@@ -177,6 +178,20 @@ func (s *ZenDutyService) List(ctx *gin.Context, config models.TicketConfiguratio
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ZenDuty incidents: %w", err)
 	}
+
+	// Sort client-side to honor sort_by/sort_order, consistent with the other
+	// providers. ZenDuty incidents only carry a creation timestamp, so that is
+	// the sole supported sort field; the default order is creation date
+	// descending (newest first), and SortOrder == "asc" flips it to ascending.
+	sortAscending := strings.ToLower(params.SortOrder) == "asc"
+	sort.SliceStable(incidents, func(i, j int) bool {
+		ti, _ := time.Parse(time.RFC3339, incidents[i].CreationDate)
+		tj, _ := time.Parse(time.RFC3339, incidents[j].CreationDate)
+		if sortAscending {
+			return ti.Before(tj)
+		}
+		return ti.After(tj)
+	})
 
 	// Client-side pagination since ZenDuty API may not support offset/limit.
 	// Normalize limit/offset in-place (params is passed by value, so this is

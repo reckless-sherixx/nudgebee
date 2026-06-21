@@ -95,6 +95,15 @@ func FetchServiceNowIncidentCreateMeta(ctx *gin.Context, config models.TicketCon
 	return map[string]interface{}{"data": []Template{template}}, nil
 }
 
+// ServiceNow assignee metadata is paged to avoid silently truncating the
+// assignee dropdown on instances with many active users.
+const (
+	// serviceNowUserPageSize is the per-request sys_user limit.
+	serviceNowUserPageSize = 100
+	// serviceNowUserFetchCap bounds the total users fetched across all pages.
+	serviceNowUserFetchCap = 500
+)
+
 // fetchServiceNowUsers returns active sys_user records as assignee options
 // ({id, name, value: sys_id}). On any error it logs and returns an empty list so
 // the create-meta template still renders (assignee just stays unseeded).
@@ -109,42 +118,54 @@ func fetchServiceNowUsers(ctx *gin.Context, config models.TicketConfigurations) 
 		QueryParameters: &tableapi.TableRequestBuilder2GetQueryParameters{
 			Query:  "active=true^ORDERBYname",
 			Fields: []string{"sys_id", "name", "user_name", "email"},
-			Limit:  100,
+			Limit:  serviceNowUserPageSize,
 		},
 	}
 
-	collectionResponse, err := tableBuilder.Get(ctx, getConfig)
-	if err != nil {
-		slog.Warn("ServiceNow: failed to fetch sys_user records", "error", err)
-		return []interface{}{}
-	}
-	results, err := collectionResponse.GetResult()
-	if err != nil {
-		slog.Warn("ServiceNow: failed to read sys_user results", "error", err)
-		return []interface{}{}
-	}
+	users := make([]interface{}, 0, serviceNowUserPageSize)
+	// Page through sys_user records (ServiceNow caps a single response well below
+	// large user directories) up to a sane bound so the assignee dropdown is not
+	// silently truncated at the first page.
+	for offset := 0; offset < serviceNowUserFetchCap; offset += serviceNowUserPageSize {
+		getConfig.QueryParameters.Offset = offset
 
-	users := make([]interface{}, 0, len(results))
-	for _, record := range results {
-		sysID, _ := getRecordStringValue(record, "sys_id")
-		if sysID == "" {
-			continue
+		collectionResponse, err := tableBuilder.Get(ctx, getConfig)
+		if err != nil {
+			slog.Warn("ServiceNow: failed to fetch sys_user records", "offset", offset, "error", err)
+			break
 		}
-		name, _ := getRecordStringValue(record, "name")
-		if name == "" {
-			name, _ = getRecordStringValue(record, "user_name")
+		results, err := collectionResponse.GetResult()
+		if err != nil {
+			slog.Warn("ServiceNow: failed to read sys_user results", "offset", offset, "error", err)
+			break
 		}
-		if name == "" {
-			name, _ = getRecordStringValue(record, "email")
+
+		for _, record := range results {
+			sysID, _ := getRecordStringValue(record, "sys_id")
+			if sysID == "" {
+				continue
+			}
+			name, _ := getRecordStringValue(record, "name")
+			if name == "" {
+				name, _ = getRecordStringValue(record, "user_name")
+			}
+			if name == "" {
+				name, _ = getRecordStringValue(record, "email")
+			}
+			if name == "" {
+				name = "Unknown User (" + sysID + ")"
+			}
+			users = append(users, map[string]interface{}{
+				"id":    sysID,
+				"name":  name,
+				"value": sysID,
+			})
 		}
-		if name == "" {
-			name = "Unknown User (" + sysID + ")"
+
+		// Last page reached when ServiceNow returns fewer than a full page.
+		if len(results) < serviceNowUserPageSize {
+			break
 		}
-		users = append(users, map[string]interface{}{
-			"id":    sysID,
-			"name":  name,
-			"value": sysID,
-		})
 	}
 	return users
 }

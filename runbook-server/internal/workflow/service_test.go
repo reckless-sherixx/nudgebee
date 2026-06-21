@@ -676,8 +676,8 @@ func (m *MockWorkflowStore) Delete(ctx context.Context, tenantID, accountID, id 
 	return args.Error(0)
 }
 
-func (m *MockWorkflowStore) UpdateWorkflowStatus(ctx context.Context, tenantID, accountID, id string, status model.WorkflowStatus) error {
-	args := m.Called(ctx, tenantID, accountID, id, status)
+func (m *MockWorkflowStore) UpdateWorkflowStatus(ctx context.Context, tenantID, accountID, id, updatedBy string, status model.WorkflowStatus) error {
+	args := m.Called(ctx, tenantID, accountID, id, updatedBy, status)
 	return args.Error(0)
 }
 
@@ -764,8 +764,8 @@ func (m *MockWorkflowStore) PublishVersion(ctx context.Context, workflowID, crea
 	return args.Get(0).(*model.WorkflowVersion), args.Error(1)
 }
 
-func (m *MockWorkflowStore) SetLiveVersion(ctx context.Context, tenantID, accountID, workflowID, versionID string) error {
-	args := m.Called(ctx, tenantID, accountID, workflowID, versionID)
+func (m *MockWorkflowStore) SetLiveVersion(ctx context.Context, tenantID, accountID, workflowID, versionID, updatedBy string) error {
+	args := m.Called(ctx, tenantID, accountID, workflowID, versionID, updatedBy)
 	return args.Error(0)
 }
 
@@ -782,8 +782,8 @@ func (m *MockWorkflowStore) UpdateVersionMetadata(ctx context.Context, workflowI
 	return args.Get(0).(*model.WorkflowVersion), args.Error(1)
 }
 
-func (m *MockWorkflowStore) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID string, status model.WorkflowStatus) (bool, error) {
-	args := m.Called(ctx, tenantID, accountID, workflowID, versionID, status)
+func (m *MockWorkflowStore) UpdateVersionStatus(ctx context.Context, tenantID, accountID, workflowID, versionID, updatedBy string, status model.WorkflowStatus) (bool, error) {
+	args := m.Called(ctx, tenantID, accountID, workflowID, versionID, updatedBy, status)
 	return args.Bool(0), args.Error(1)
 }
 

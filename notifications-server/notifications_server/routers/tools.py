@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -34,9 +34,10 @@ router = APIRouter(
 
 
 @router.get("/install/ms-teams")
-async def install_teams():
+async def install_teams(state: Optional[str] = None):
+    # `state` is minted upstream (app signs identity into it); random fallback when absent.
     auth_url = teams_app.get_authorization_request_url(
-        scopes=settings.ms_teams.scopes, state=str(uuid4()), redirect_uri=settings.ms_teams_redirect_uri
+        scopes=settings.ms_teams.scopes, state=state or str(uuid4()), redirect_uri=settings.ms_teams_redirect_uri
     )
     return RedirectResponse(url=auth_url)
 

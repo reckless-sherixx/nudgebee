@@ -729,6 +729,27 @@ func AddCustomTicketComment(configuration models.TicketConfigurations, ticketId,
 	return fetchCommentsFromJira(ticketId, jiraClient)
 }
 
+// jqlDateLayout is the JQL date format ("yyyy-MM-dd").
+const jqlDateLayout = "2006-01-02"
+
+// jqlDateTimeLayout is the JQL datetime format ("yyyy-MM-dd HH:mm").
+const jqlDateTimeLayout = "2006-01-02 15:04"
+
+// validateJQLDate ensures a date filter value is a valid date before it is
+// interpolated into the JQL, so a malformed value returns a clear, field-specific
+// error instead of a cryptic Jira search failure. ListParams dates are ISO 8601
+// datetimes, but a plain YYYY-MM-DD is also accepted. The returned string is
+// normalized to a JQL-compatible form ("yyyy-MM-dd" or "yyyy-MM-dd HH:mm").
+func validateJQLDate(field, value string) (string, error) {
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t.Format(jqlDateTimeLayout), nil
+	}
+	if t, err := time.Parse(jqlDateLayout, value); err == nil {
+		return t.Format(jqlDateLayout), nil
+	}
+	return "", fmt.Errorf("invalid %s: %q must be an ISO 8601 datetime or YYYY-MM-DD date", field, value)
+}
+
 // List retrieves tickets from Jira using JQL search.
 func (s *JiraService) List(ctx *gin.Context, config models.TicketConfigurations, params models.ListParams) (*models.ListResult, error) {
 	jiraClient, err := clients.CreateJiraClient(config.Username, config.Password, config.URL)
@@ -750,10 +771,18 @@ func (s *JiraService) List(ctx *gin.Context, config models.TicketConfigurations,
 		jqlParts = append(jqlParts, fmt.Sprintf("assignee = %q", params.Assignee))
 	}
 	if params.CreatedAfter != "" {
-		jqlParts = append(jqlParts, fmt.Sprintf("created >= %q", params.CreatedAfter))
+		formatted, err := validateJQLDate("created_after", params.CreatedAfter)
+		if err != nil {
+			return nil, err
+		}
+		jqlParts = append(jqlParts, fmt.Sprintf("created >= %q", formatted))
 	}
 	if params.CreatedBefore != "" {
-		jqlParts = append(jqlParts, fmt.Sprintf("created <= %q", params.CreatedBefore))
+		formatted, err := validateJQLDate("created_before", params.CreatedBefore)
+		if err != nil {
+			return nil, err
+		}
+		jqlParts = append(jqlParts, fmt.Sprintf("created <= %q", formatted))
 	}
 
 	jql := strings.Join(jqlParts, " AND ")
