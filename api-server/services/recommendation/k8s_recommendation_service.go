@@ -481,6 +481,7 @@ func processImageScanner(ctx *security.RequestContext, accountId string, dbms *d
 				  AND r.tenant_id = ri.tenant_id
 				  AND r.category = 'Security' AND r.rule_name = 'image_scan'
 				  AND r.account_object_id IS NOT NULL
+				  AND r.status != 'Archive'
 				  AND r.recommendation->>'image_name' = ri.image
 			)
 			AND ri.image NOT IN (SELECT image_name FROM scanned_tasks WHERE image_name IS NOT NULL)
@@ -618,6 +619,7 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 				  AND r.tenant_id = $2
 				  AND r.category = 'Security' AND r.rule_name = 'image_scan'
 				  AND r.account_object_id IS NOT NULL
+				  AND r.status != 'Archive'
 				  AND r.recommendation->>'image_name' = ri.image
 			)
 			AND ri.image NOT IN (SELECT image_name FROM scanned_tasks WHERE image_name IS NOT NULL)
