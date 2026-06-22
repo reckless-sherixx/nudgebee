@@ -801,12 +801,33 @@ const CloudOptimizeRecommendationsTable = (props: {
                       hasWriteAccess(row?.account_id ?? selectedAccountId) &&
                       isActionableStatus &&
                       ['aws', 'azure', 'gcp'].includes(resolvedProvider.toLowerCase());
+                    const sideActions = canApplyAlarm
+                      ? [
+                          {
+                            id: 'apply-alarm',
+                            label: isApplying ? 'Creating...' : 'Create Alarm',
+                            onClick: () => handleApplyAlarmRecommendation(row),
+                            tone: 'primary' as const,
+                            size: 'md' as const,
+                            loading: isApplying,
+                            description: 'Auto-create alarm with the default configuration',
+                          },
+                          {
+                            id: 'edit-alarm-config',
+                            label: 'Edit Configuration',
+                            onClick: () => {
+                              setSelectedRecommendation(row);
+                              setIsAlarmCreationModalOpen(true);
+                            },
+                            tone: 'secondary' as const,
+                            size: 'md' as const,
+                          },
+                        ]
+                      : [];
                     return (
                       <OptimizeMitigation
                         drilldownQuery={drilldownQuery}
-                        canApplyAlarm={canApplyAlarm}
-                        isApplying={isApplying}
-                        onApply={() => handleApplyAlarmRecommendation(row)}
+                        sideActions={sideActions}
                         canExecuteCommand={canExecuteCommand}
                         accountId={row?.account_id ?? selectedAccountId}
                         recommendationId={row?.id}
@@ -922,46 +943,96 @@ function optimizeDescription(_accountId: any, drilldownQuery: any) {
   );
 }
 
+interface MitigationSideAction {
+  id: string;
+  label: string;
+  onClick: () => void;
+  tone?: 'primary' | 'secondary' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  loading?: boolean;
+  description?: string;
+}
+
 function OptimizeMitigation({
   drilldownQuery,
-  canApplyAlarm = false,
-  isApplying = false,
-  onApply,
+  sideActions = [],
   canExecuteCommand = false,
   accountId,
   recommendationId,
 }: {
   drilldownQuery: any;
-  canApplyAlarm?: boolean;
-  isApplying?: boolean;
-  onApply?: () => void;
+  sideActions?: MitigationSideAction[];
   canExecuteCommand?: boolean;
   accountId?: string;
   recommendationId?: string;
 }) {
   const mitigations = interpolateMitigations(drilldownQuery?.recommenedationDetails?.mitigations, drilldownQuery?.recommendation);
   const markdowns = mitigations?.length ? mitigations.join('\n\n') : null;
+  const [primaryAction, ...secondaryActions] = sideActions;
 
   return (
-    <Box sx={{ background: ds.background[100], borderRadius: ds.radius.md, p: ds.space[2] }}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 'var(--ds-space-2)' }}>
-        <ApplyMitigationModal markdowns={markdowns} accountId={accountId} recommendationId={recommendationId} canExecute={canExecuteCommand} />
+    <Box sx={{ background: ds.background[100], borderRadius: ds.radius.md, p: ds.space[2], display: 'flex', gap: ds.space[4] }}>
+      {/* Left: mitigation content */}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 'var(--ds-space-2)' }}>
+          <ApplyMitigationModal markdowns={markdowns} accountId={accountId} recommendationId={recommendationId} canExecute={canExecuteCommand} />
+        </Box>
+        {markdowns ? (
+          <MarkDowns
+            data={markdowns}
+            sx={{ padding: 0, '& p:last-child': { marginBottom: 0 }, maxHeight: 'none', overflow: 'visible' }}
+            allowExecutable={false}
+            onLinkClick={null}
+          />
+        ) : (
+          <Typography color={ds.gray[500]}>No mitigation steps available</Typography>
+        )}
       </Box>
-      {markdowns ? (
-        <MarkDowns data={markdowns} sx={{ padding: 0, '& p:last-child': { marginBottom: 0 } }} allowExecutable={false} onLinkClick={null} />
-      ) : (
-        <Typography color={ds.gray[500]}>No mitigation steps available</Typography>
-      )}
-      {canApplyAlarm && onApply && (
-        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: ds.space[2], mt: ds.space[3] }}>
-          <Typography variant='body2'>Click</Typography>
-          <DsButton size='sm' tone='primary' onClick={onApply} loading={isApplying} id='mitigation-apply-create-alarm-btn'>
-            {isApplying ? 'Creating Alarm...' : 'Apply'}
+
+      {/* Right: action panel — rendered only when sideActions are provided */}
+      {primaryAction && (
+        <Box
+          sx={{
+            width: ds.space.mul(0, 110),
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: ds.space[3],
+            p: ds.space[4],
+            borderLeft: `2px solid ${ds.gray[200]}`,
+            borderRadius: `0 ${ds.radius.md} ${ds.radius.md} 0`,
+          }}
+        >
+          <DsButton
+            size={primaryAction.size ?? 'md'}
+            tone={primaryAction.tone ?? 'primary'}
+            onClick={primaryAction.onClick}
+            loading={primaryAction.loading}
+            fullWidth
+            id={`mitigation-action-${primaryAction.id}`}
+          >
+            {primaryAction.label}
           </DsButton>
-          <Typography variant='body2'>
-            to automatically create the alarm with the default configuration, or open the actions menu (⋮) on this row and select{' '}
-            <strong>Create Alarm</strong>.
-          </Typography>
+          {primaryAction.description && (
+            <Typography variant='caption' color={ds.gray[500]} textAlign='center' sx={{ lineHeight: 1.4 }}>
+              {primaryAction.description}
+            </Typography>
+          )}
+          {secondaryActions.map((action) => (
+            <DsButton
+              key={action.id}
+              size={action.size ?? 'md'}
+              tone={action.tone ?? 'secondary'}
+              onClick={action.onClick}
+              loading={action.loading}
+              fullWidth
+              id={`mitigation-action-${action.id}`}
+            >
+              {action.label}
+            </DsButton>
+          ))}
         </Box>
       )}
     </Box>

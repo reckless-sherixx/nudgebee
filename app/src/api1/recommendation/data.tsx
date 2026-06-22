@@ -137,7 +137,10 @@ export const recommendationDetails = {
                 It is recommended to have tags like Name, Environment, Owner and Role to have better track of resources.`,
       ],
       mitigations: [
-        'Run describe-instances command (OSX/Linux/UNIX) using the ID of the Amazon EC2 instance that you want to configure as the identifier parameter to apply the specified tagging schema (i.e. Name, Role, Environment, and Owner) to the selected EC2 instance (the command does not produce an output): ```aws ec2 create-tags --resources {{recommendation.instance_id}} --tags Key=Name,Value=Prod-Web-Server Key=Role,Value=Web-Tier Key=Environment,Value=Production Key=Owner,Value=DevOps-Team```',
+        `Run describe-instances command (OSX/Linux/UNIX) using the ID of the Amazon EC2 instance that you want to configure as the identifier parameter to apply the specified tagging schema (i.e. Name, Role, Environment, and Owner) to the selected EC2 instance (the command does not produce an output):
+\`\`\`
+aws ec2 create-tags --resources {{recommendation.instance_id}} --tags Key=Name,Value=Prod-Web-Server Key=Role,Value=Web-Tier Key=Environment,Value=Production Key=Owner,Value=DevOps-Team
+\`\`\``,
       ],
       compliances: ['APRA', 'MAS', 'NIST4'],
       references: ['https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html'],
