@@ -12,7 +12,7 @@ from notifications_server import engine, slack_app, teams_app
 from notifications_server.configs import setup_logger, HealthCheckFilter, settings
 from notifications_server.processors.notification import NotificationProcessor
 from notifications_server.rabbitmq.message_consumer import Consumer
-from notifications_server.routers import tools, common, actions, llm_callbacks
+from notifications_server.routers import tools, common, actions, llm_callbacks, discord
 
 setup_logger()
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
@@ -75,6 +75,7 @@ app.include_router(tools.slack_router)
 app.include_router(common.router)
 app.include_router(actions.router)
 app.include_router(llm_callbacks.router)
+app.include_router(discord.router)
 
 
 @app.get("/health")

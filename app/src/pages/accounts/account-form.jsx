@@ -47,6 +47,16 @@ export default function AddAccountForm() {
                 hasTeamName={false}
               />
             );
+          case 'discord':
+            return (
+              <MessagingIntegrationTile
+                provider='discord'
+                displayName='Discord'
+                installUrl={null}
+                headers={['Installed At', 'Channels', { name: '', width: '20%' }, { name: '', width: '1%' }]}
+                hasTeamName={false}
+              />
+            );
           case 'pagerduty_webhook':
             return <ListIntegrations integrationName={'pagerduty_webhook'} />;
           case 'zenduty_webhook':

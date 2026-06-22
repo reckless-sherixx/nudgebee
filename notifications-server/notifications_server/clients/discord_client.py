@@ -116,5 +116,24 @@ class DiscordClient:
             return {"ok": False, "error": str(e)}
 
     @classmethod
+    def validate_token(cls, token: str) -> Dict[str, Any]:
+        """
+        Validate a bot token by calling GET /users/@me.
+        Returns {'ok': True, 'bot': {'id': ..., 'username': ...}} on success.
+        """
+        headers = cls.get_headers(token)
+        try:
+            resp = requests.get(f"{cls.BASE_URL}/users/@me", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                return {"ok": True, "bot": {"id": data.get("id"), "username": data.get("username")}}
+            else:
+                LOG.error("Discord token validation failed: %s", resp.text)
+                return {"ok": False, "error": f"Invalid token (HTTP {resp.status_code})"}
+        except Exception as e:
+            LOG.exception("Error validating Discord token")
+            return {"ok": False, "error": str(e)}
+
+    @classmethod
     def users_list(cls, token: str, **kwargs) -> Dict[str, Any]:
         return {"ok": True, "members": []}
