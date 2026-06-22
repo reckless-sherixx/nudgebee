@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Box, Typography, Collapse } from '@mui/material';
 import { Button } from '@components1/ds/Button';
 import { ExpandMore, ExpandLess, ContentCopy, AccessTime } from '@mui/icons-material';
-import { colors } from 'src/utils/colors';
+import { colors, ds } from 'src/utils/colors';
 import JsonTreeView from '@components1/common/JsonTreeView';
 import CustomLabels from '@components1/common/widgets/CustomLabels';
 

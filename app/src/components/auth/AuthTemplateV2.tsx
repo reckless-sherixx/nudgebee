@@ -6,6 +6,7 @@ import { useMediaQuery } from '@mui/material';
 import SafeIcon from '@components1/common/SafeIcon';
 import { SignInInvestigate, SignInTroubleshoot, SignInWorkflow, SignInOptimize } from '@assets';
 import { useBrandingConfig } from '@hooks/useTenantBranding';
+import { ds } from '@utils/colors';
 
 // A carousel slide. `image` is a bundled static import (default slides) or a
 // partner-supplied URL string sourced from branding config (theme.json).
