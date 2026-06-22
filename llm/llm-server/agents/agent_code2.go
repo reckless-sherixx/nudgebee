@@ -776,7 +776,7 @@ func evaluateCodeUsingWorkspace(ctx *security.RequestContext, agentRequest core.
 					ctx.GetMeter(),
 				)
 				cleanupCmd := fmt.Sprintf("rm -rf /tmp/code-analysis-%s-*", agentRequest.SessionId)
-				if _, cleanupErr := wm.ExecuteCommand(cleanupCtx, agentRequest.AccountId, "", cleanupCmd, nil); cleanupErr != nil {
+				if _, cleanupErr := wm.ExecuteCommand(cleanupCtx, agentRequest.AccountId, agentRequest.SessionId, cleanupCmd, nil); cleanupErr != nil {
 					logger.Warn("code: workspace cleanup failed", "error", cleanupErr)
 				}
 			}()
