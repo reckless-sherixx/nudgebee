@@ -24,6 +24,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# HTTP status codes that warrant retrying an outbound request.
+RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
+
 default_health_check_endpoints = [
     "/actuator/health",
     "/healthcheck",
@@ -73,7 +76,7 @@ def get_http_session_with_retry(retry_attempts: int = 3, backoff_factor: float =
     if retry_attempts > 0:
         retry_strategy = Retry(
             total=retry_attempts,  # Total number of retries
-            status_forcelist=[429, 500, 502, 503, 504],  # Retry on these HTTP status codes
+            status_forcelist=RETRY_STATUS_CODES,  # Retry on these HTTP status codes
             allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],  # Only retry on these HTTP methods
             backoff_factor=backoff_factor,  # Backoff factor for delay between retries
         )
