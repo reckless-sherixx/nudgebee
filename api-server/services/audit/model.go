@@ -178,6 +178,8 @@ const (
 	EventTypeTriageRuleCreate   EventType = "TRIAGE_RULE_CREATE"
 	EventTypeTriageRuleUpdate   EventType = "TRIAGE_RULE_UPDATE"
 	EventTypeTriageRuleDelete   EventType = "TRIAGE_RULE_DELETE"
+	EventTypeTriageRuleEnable   EventType = "TRIAGE_RULE_ENABLE"
+	EventTypeTriageRuleDisable  EventType = "TRIAGE_RULE_DISABLE"
 	EventTypeTriageStatusUpdate EventType = "TRIAGE_STATUS_UPDATE"
 	EventTypeTriageBackfill     EventType = "TRIAGE_BACKFILL"
 
