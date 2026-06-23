@@ -5,8 +5,8 @@ on:
   pull_request:
     branches: ['main']
     paths:
-      - llm/benchmark/server/**
-      - .github/workflows/benchmark-server-dev-civo.yaml
+      - llm/benchmark/**
+      - .github/workflows/benchmark-server.yaml
 
 jobs:
   app-build:

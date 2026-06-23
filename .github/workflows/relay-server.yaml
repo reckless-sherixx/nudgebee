@@ -6,7 +6,7 @@ on:
     branches: ['main']
     paths:
       - collector-server/k8s-collector/relay-server/**
-      - .github/workflows/relay-server-test.yaml
+      - .github/workflows/relay-server.yaml
 
 jobs:
   app-build:
