@@ -192,6 +192,9 @@ var (
 
 // getEnvironmentMultiplier fetches the environment multiplier from cloud_accounts
 func getEnvironmentMultiplier(ctx context.Context, db *sqlx.DB, cloudAccountID string) float64 {
+	if cloudAccountID == "" {
+		return EnvMultiplierDefault
+	}
 	envCacheMu.RLock()
 	if entry, found := envCache[cloudAccountID]; found && time.Now().Before(entry.expiresAt) {
 		envCacheMu.RUnlock()

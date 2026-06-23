@@ -102,8 +102,8 @@ func ProcessEvent(ctx context.Context, db *sqlx.DB, event *models.Event) error {
 // while keeping a reference to the previous chain via previous_event_id.
 func detectAndRecordDuplicate(ctx context.Context, db *sqlx.DB, event *models.Event) (int, error) {
 	// Check for required fields
-	if event.Fingerprint == nil || event.CloudAccountId == nil || event.StartsAt == nil {
-		return 0, fmt.Errorf("event missing required fields (fingerprint, cloud_account_id, or starts_at)")
+	if event.Fingerprint == nil || event.CloudAccountId == nil || event.StartsAt == nil || event.Tenant == nil || *event.Tenant == "" {
+		return 0, fmt.Errorf("event missing required fields (fingerprint, cloud_account_id, starts_at, or tenant)")
 	}
 
 	// Query event_duplicates to find existing chain for this fingerprint
@@ -260,8 +260,8 @@ func detectAndRecordDuplicate(ctx context.Context, db *sqlx.DB, event *models.Ev
 // detectAndRecordCorrelations finds and records correlated events
 func detectAndRecordCorrelations(ctx context.Context, db *sqlx.DB, event *models.Event) (string, float64, error) {
 	// Check for required fields
-	if event.CloudAccountId == nil || event.Fingerprint == nil || event.StartsAt == nil {
-		return "", 0, fmt.Errorf("event missing required fields (cloud_account_id, fingerprint, or starts_at)")
+	if event.CloudAccountId == nil || event.Fingerprint == nil || event.StartsAt == nil || event.Tenant == nil || *event.Tenant == "" {
+		return "", 0, fmt.Errorf("event missing required fields (cloud_account_id, fingerprint, starts_at, or tenant)")
 	}
 
 	// Parse service map from event evidences

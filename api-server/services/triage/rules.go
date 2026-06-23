@@ -166,13 +166,24 @@ var (
 // LoadMatchingRules loads all enabled rules for the given tenant/account
 // System rules (tenant_id IS NULL AND account_id IS NULL) are included unless overridden
 func LoadMatchingRules(ctx context.Context, db *sqlx.DB, tenantID, accountID string) ([]TriageRule, error) {
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenant ID cannot be empty")
+	}
+
 	cacheKey := tenantID + ":" + accountID
 
 	triageRulesCacheMu.RLock()
 	entry, found := triageRulesCache[cacheKey]
 	if found && time.Now().Before(entry.expiresAt) {
+		if entry.rules == nil {
+			triageRulesCacheMu.RUnlock()
+			return nil, nil
+		}
+		// Return a copy of the slice to prevent concurrent modification/data races
+		rulesCopy := make([]TriageRule, len(entry.rules))
+		copy(rulesCopy, entry.rules)
 		triageRulesCacheMu.RUnlock()
-		return entry.rules, nil
+		return rulesCopy, nil
 	}
 	triageRulesCacheMu.RUnlock()
 
@@ -690,23 +701,39 @@ var (
 )
 
 func runRuleMatchBatcher(ctx context.Context, db *sqlx.DB) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.ErrorContext(ctx, "Recovered from panic in runRuleMatchBatcher", "panic", r)
+		}
+	}()
+
 	counts := make(map[string]int)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	flush := func() {
+		if len(counts) == 0 {
+			return
+		}
+		for id, count := range counts {
+			updateRuleMatchCountBy(ctx, db, id, count)
+		}
+		counts = make(map[string]int)
+	}
+
 	for {
 		select {
-		case ruleID := <-matchCountChan:
+		case ruleID, ok := <-matchCountChan:
+			if !ok {
+				flush()
+				return
+			}
 			counts[ruleID]++
 		case <-ticker.C:
-			if len(counts) == 0 {
-				continue
-			}
-			batch := counts
-			counts = make(map[string]int)
-			for id, count := range batch {
-				updateRuleMatchCountBy(ctx, db, id, count)
-			}
+			flush()
+		case <-ctx.Done():
+			flush()
+			return
 		}
 	}
 }
