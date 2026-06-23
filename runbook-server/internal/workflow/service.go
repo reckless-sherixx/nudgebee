@@ -83,6 +83,7 @@ type WorkflowService interface {
 	UpdateWorkflowVersionStatus(ctx *security.RequestContext, accountId, id string, versionNumber int, status model.WorkflowStatus) (*model.WorkflowVersion, error)
 	SetLiveWorkflowVersion(ctx *security.RequestContext, accountId, id string, versionNumber int) (*model.Workflow, error)
 	UpdateWorkflowVersionMetadata(ctx *security.RequestContext, accountId, id string, versionNumber int, name, description *string) (*model.WorkflowVersion, error)
+	DeleteWorkflowVersion(ctx *security.RequestContext, accountId, id string, versionNumber int) error
 }
 
 // FanOutResult summarizes a webhook fan-out dispatch — one entry per subscriber
@@ -4464,4 +4465,63 @@ func (s *Service) UpdateWorkflowVersionStatus(ctx *security.RequestContext, acco
 		map[string]any{"action": "update_version_status"},
 	)
 	return target, nil
+}
+
+// DeleteWorkflowVersion hard-deletes a single version of a workflow. It refuses
+// to delete the live version (workflows.live_version_id) or the version the
+// current draft is branched off (workflows.draft_version_id) — those are still
+// load-bearing, so the user must make another version live / checkout elsewhere
+// first. Past executions store version_number as a plain int, so deleting a
+// version never orphans execution history. The DAO repeats the live/draft guard
+// inside its DELETE to stay correct under a concurrent make-live / checkout.
+func (s *Service) DeleteWorkflowVersion(ctx *security.RequestContext, accountId, id string, versionNumber int) error {
+	if accountId == "" || id == "" || versionNumber <= 0 {
+		return fmt.Errorf("accountId, id, version_number are required")
+	}
+	if !ctx.GetSecurityContext().HasAccountAccess(accountId, security.SecurityAccessTypeUpdate) {
+		return common.ErrorUnauthorized("account not accessible")
+	}
+	tenantId := ctx.GetSecurityContext().GetTenantId()
+	// Resolve the workflow first: Find is tenant/account-scoped, so a caller
+	// with no access (or a cross-tenant id) fails fast here before we touch the
+	// unscoped GetWorkflowVersion lookup.
+	wf, err := s.store.Find(ctx.GetContext(), tenantId, accountId, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("workflow with ID %s not found: %w", id, sql.ErrNoRows)
+		}
+		return err
+	}
+	if wf == nil {
+		return fmt.Errorf("workflow with ID %s not found: %w", id, sql.ErrNoRows)
+	}
+	target, err := s.store.GetWorkflowVersion(ctx.GetContext(), id, versionNumber)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("version %d of workflow %s not found: %w", versionNumber, id, sql.ErrNoRows)
+		}
+		return err
+	}
+	if target == nil {
+		return fmt.Errorf("version %d of workflow %s not found: %w", versionNumber, id, sql.ErrNoRows)
+	}
+	if wf.LiveVersionID != nil && *wf.LiveVersionID == target.ID {
+		return common.ErrorBadRequest("cannot delete the live version; make another version live first")
+	}
+	if wf.DraftVersionID != nil && *wf.DraftVersionID == target.ID {
+		return common.ErrorBadRequest("cannot delete the version the current draft is based on")
+	}
+	if err := s.store.DeleteWorkflowVersion(ctx.GetContext(), tenantId, accountId, id, target.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("version %d of workflow %s not found: %w", versionNumber, id, sql.ErrNoRows)
+		}
+		return fmt.Errorf("failed to delete workflow version: %w", err)
+	}
+	emitWorkflowAudit(
+		ctx, accountId,
+		audit.EventTypeAutorunbookDelete, audit.EventActionDelete, audit.EventStatusSuccess,
+		id, map[string]any{"version_number": versionNumber, "version_id": target.ID}, nil,
+		map[string]any{"action": "delete_version", "version_number": versionNumber, "version_id": target.ID},
+	)
+	return nil
 }

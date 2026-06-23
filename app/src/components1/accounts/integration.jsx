@@ -700,6 +700,21 @@ const Integrations = () => {
       // Map 'status: enabled' to 'active' for consistency
       const status = acc.status === 'enabled' ? 'active' : 'disabled';
 
+      // google_chat_space bindings count under the Google Chat card; the space is the
+      // destination (no channel picker), so seed channels for the messaging badge check.
+      if (acc.type === 'google_chat_space') {
+        addToMap('GOOGLE_CHAT', { ...acc, status, channels: [acc.name] });
+        return;
+      }
+
+      // Slack / MS Teams integration installs supersede any legacy messaging_platforms
+      // entry for the same card (one install per tenant during the storage migration).
+      if (acc.type === 'slack' || acc.type === 'ms_teams') {
+        const cardKey = acc.type === 'ms_teams' ? 'MSTEAMS' : 'SLACK';
+        map[cardKey] = [{ ...acc, status, channels: [acc.name] }];
+        return;
+      }
+
       // Special case mapping for OTel/Clickhouse naming if needed
       let key = acc.type;
       if (acc.type === 'postgresql') {

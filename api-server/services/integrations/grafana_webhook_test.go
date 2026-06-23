@@ -40,7 +40,7 @@ func TestMapGrafanaAlertToEvent_Firing(t *testing.T) {
 	assert.Equal(t, "CPU usage above 90%", got.EventDescription)
 	assert.Equal(t, "https://grafana.example/d/abc", got.EventUrl)
 	assert.Equal(t, string(event.EventStatusFiring), got.EventStatus)
-	assert.Equal(t, string(event.EventPriortiyHigh), got.EventPriority)
+	assert.Equal(t, string(event.EventPriorityHigh), got.EventPriority)
 	assert.Equal(t, "pod", got.EventSubjectKind)
 	assert.Equal(t, "api-0", got.EventSubjectName)
 	assert.Equal(t, "prod", got.EventSubjectNamespace)

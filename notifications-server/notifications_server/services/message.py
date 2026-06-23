@@ -14,6 +14,7 @@ from collections import defaultdict
 from sqlalchemy import select
 
 from notifications_server.clients.google_chat_client import GoogleChatClient
+from notifications_server.clients.google_chat_app_client import GoogleChatAppClient
 from notifications_server.clients.ms_teams_client import MsTeamsClient
 from notifications_server.configs import settings
 
@@ -32,6 +33,13 @@ from notifications_server.models.models import (
     SentNotifications,
     NotificationRuleMappings,
     MessagingPlatform,
+)
+from notifications_server.services.messaging_installations import (
+    MESSAGING_PLATFORMS,
+    ORIGIN_INTEGRATION,
+    ORIGIN_LEGACY,
+    load_integration_installations_async,
+    persist_messaging_token_async,
 )
 
 LOG = logging.getLogger(__name__)
@@ -381,9 +389,8 @@ class TeamsSender(BaseSender):
             if "error" in response and response["error"]:
                 if "AADSTS700082" in response.get("error_description", ""):
                     LOG.warning(f"Refresh token expired for installation id {ms_teams_installation.id}")
-                    ms_teams_installation.token_expires_at = None
-                    sess.add(ms_teams_installation)
-                    await sess.commit()
+                    # Clear the expiry (origin-aware) to mark the install as needing re-auth.
+                    await persist_messaging_token_async(sess, ip, ip.token, token_expires_at=None)
                     return None
                 LOG.exception(
                     f"Unable to get access token for teams due to {response.get('error_description')} for "
@@ -728,7 +735,23 @@ class MessageService:
     async def get_installed_platforms(session, **kwargs):
         filter_conditions = {key: value for key, value in kwargs.items() if value is not None}
         result = await session.execute(select(MessagingPlatform).filter_by(**filter_conditions))
-        return result.scalars().all()
+        installs = list(result.scalars().all())
+        for ip in installs:
+            ip._origin = ORIGIN_LEGACY
+        tenant_id = filter_conditions.get("tenant_id")
+        if tenant_id is None:
+            return installs
+        # Slack/MS Teams migrating to integrations: an integration install (one per
+        # tenant) wins over the legacy messaging_platforms row of the same platform.
+        requested = filter_conditions.get("platform")
+        target_platforms = [requested] if requested in MESSAGING_PLATFORMS else list(MESSAGING_PLATFORMS)
+        integration_installs = []
+        for platform in target_platforms:
+            integration_installs += await load_integration_installations_async(session, tenant_id, platform)
+        if not integration_installs:
+            return installs
+        overridden = {ip.platform for ip in integration_installs}
+        return [ip for ip in installs if ip.platform not in overridden] + integration_installs
 
     @staticmethod
     def get_channels_from_request_or_defaults(installed_platforms, matched_rules, source, kwargs):
@@ -879,13 +902,14 @@ class MessageService:
         return response_data, None
 
     async def _send_finding_to_gchat(self, session, tenant_id, ip, finding, _):
-        token = await self.gchat_sender.acquire_google_chat_access_token(session, ip)
-        if not token:
-            return None, None
+        if not GoogleChatAppClient.is_enabled():
+            return (
+                failed_response("google_chat", reason="Google Chat service account is not configured"),
+                None,
+            )
 
         result = await asyncio.to_thread(
-            GoogleChatClient.post_to_google_chat,
-            token,
+            GoogleChatAppClient.post_message,
             ip.to_channel,
             get_markdown_message_template(finding),
             tenant_id,
@@ -1041,44 +1065,57 @@ class MessageService:
         return failed_response("ms_teams", reason=reason)
 
     async def send_google_chat_template_notification(self, ip, template_func, param_value, session, tenant_id):
-        token = await self.gchat_sender.acquire_google_chat_access_token(session, ip)
-        if token:
-            result = await asyncio.to_thread(
-                GoogleChatClient.post_to_google_chat,
-                token,
-                normalize_channel(ip.to_channel),
-                template_func(param_value),
-                tenant_id,
-            )
+        if not GoogleChatAppClient.is_enabled():
+            return failed_response("google_chat", reason="Google Chat service account is not configured")
 
-            if result.get("success"):
-                return success_response(
-                    "google_chat",
-                    channel_id=result.get("channel_id"),
-                    message_ts=result.get("message_ts"),
-                )
+        result = await asyncio.to_thread(
+            GoogleChatAppClient.post_message,
+            normalize_channel(ip.to_channel),
+            template_func(param_value),
+            tenant_id,
+        )
 
-            return failed_response(
+        if result.get("success"):
+            return success_response(
                 "google_chat",
-                reason=result.get("reason"),
                 channel_id=result.get("channel_id"),
+                message_ts=result.get("message_ts"),
             )
 
-        return failed_response("google_chat", reason="No valid installation or token has expired")
+        return failed_response(
+            "google_chat",
+            reason=result.get("reason"),
+            channel_id=result.get("channel_id"),
+        )
 
     # ----------------------------- Token + cache helpers -----------------------------
     async def commit_session_and_clear_cache(self, ip, session):
-        session.add(ip)
-        await session.commit()
+        await MessageService._persist_installation(ip, session)
         if self.cache and self.cache.redis_client:
             self.cache.delete_cached_installations(ip.tenant_id)
 
     @staticmethod
     async def commit_session_and_clear_cache_static(ip, session):
-        session.add(ip)
-        await session.commit()
+        await MessageService._persist_installation(ip, session)
         if cache and cache.redis_client:
             cache.delete_cached_installations(ip.tenant_id)
+
+    @staticmethod
+    async def _persist_installation(ip, session):
+        # Integration-origin installs re-encrypt the refreshed token into
+        # integration_config_values; legacy installs write messaging_platforms.
+        if getattr(ip, "_origin", None) == ORIGIN_INTEGRATION:
+            await persist_messaging_token_async(
+                session,
+                ip,
+                ip.token,
+                refresh_token=ip.refresh_token,
+                token_expires_at=ip.token_expires_at,
+                refresh_token_expires_at=ip.refresh_token_expires_at,
+            )
+        else:
+            session.add(ip)
+            await session.commit()
 
     # ----------------------------- Threaded Reply Methods (always generic) -----------------------------
     async def send_threaded_reply(self, tenant_id, thread, parameters):
@@ -1112,12 +1149,15 @@ class MessageService:
         if platform == PlatformTypes.MS_TEAMS.value and not team_id:
             return [failed_response(platform, reason="team_id is required for MS Teams threaded replies")]
 
+        # Fail fast on an empty tenant_id: get_installed_platforms drops None filters,
+        # so a missing tenant would run an unscoped cross-tenant query.
+        if not tenant_id:
+            return [failed_response(platform, reason="Tenant ID is required")]
+
         try:
             async with BaseDB.async_session(self.engine)() as session:
-                result = await session.execute(
-                    select(MessagingPlatform).filter_by(tenant_id=tenant_id, platform=platform)
-                )
-                ip = result.scalars().first()
+                installs = await self.get_installed_platforms(session, tenant_id=tenant_id, platform=platform)
+                ip = next((p for p in installs if p.platform == platform), None)
                 if not ip:
                     return [failed_response(platform, reason="No installation found")]
 
@@ -1255,21 +1295,19 @@ class MessageService:
 
     async def _send_gchat_threaded_reply(self, session, ip, space_id, message_ts, template):
         """Send Google Chat threaded reply using generic template (plain text)."""
-        token = await self.gchat_sender.acquire_google_chat_access_token(session, ip)
-        if not token:
-            return [failed_response("google_chat", reason="Token acquisition failed")]
+        if not GoogleChatAppClient.is_enabled():
+            return [failed_response("google_chat", reason="Google Chat service account is not configured")]
 
         # Convert message name to thread name for replying
         thread_name = self._convert_gchat_message_to_thread_name(message_ts, space_id)
 
         # Template is plain text string
         result = await asyncio.to_thread(
-            GoogleChatClient.post_to_google_chat,
-            token,
-            {"id": space_id},
+            GoogleChatAppClient.post_message,
+            space_id,
             template,
             ip.tenant_id,
-            thread_name=thread_name,
+            thread_name,
         )
 
         if result and result.get("success"):

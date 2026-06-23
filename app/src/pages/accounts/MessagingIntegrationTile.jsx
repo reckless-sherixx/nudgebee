@@ -1,4 +1,5 @@
 import apiAccount from '@api1/account';
+import apiIntegrations from '@api1/integrations';
 import Text from '@common-new/format/Text';
 import ThreeDotsMenu from '@common-new/ThreeDotsMenu';
 import { ListingLayout } from '@components1/ds/ListingLayout';
@@ -50,7 +51,7 @@ const MessagingIntegrationTile = ({
   const listMessagingPlatform = () => {
     setIsLoading(true);
     apiAccount
-      .getMessagingPlatform(provider)
+      .getMessagingInstallations(provider)
       .then((res) => {
         setIsLoading(false);
         if (res?.data?.length === 1) {
@@ -296,6 +297,53 @@ const MessagingIntegrationTile = ({
 
   const updateChannel = () => {
     setIsLoading(true);
+
+    const inst = installationData?.[0];
+    if (inst?._origin === 'integration') {
+      // Integration installs store the default destination as scalar config values
+      // (sending uses the IDs; names are kept only for display here).
+      const values =
+        provider === 'ms_teams'
+          ? [
+              { name: 'default_team_id', value: teamVal || '' },
+              { name: 'default_team_name', value: teamName || '' },
+              { name: 'default_channel_id', value: channelsValues?.id || '' },
+              { name: 'default_channel_name', value: channelsValues?.name || '' },
+            ]
+          : [
+              { name: 'default_channel_id', value: channelsValues?.id || '' },
+              { name: 'default_channel_name', value: channelsValues?.name || '' },
+            ];
+      apiIntegrations
+        .addIntegrations({
+          integration_name: provider,
+          integration_config_name: inst._integration_name,
+          integration_config_values: values,
+          account_ids: [],
+          source: 'user',
+          skip_validation: true,
+          // integration_id switches the backend from create (which rejects the
+          // existing team/workspace name) to update, so re-saving the default
+          // channel for an installed integration persists instead of erroring.
+          ...(inst.id ? { integration_id: inst.id } : {}),
+        })
+        .then((res) => {
+          setIsLoading(false);
+          if (res?.data?.data?.integrations_create_config?.id) {
+            listMessagingPlatform();
+            snackbar.success(`${displayName} channel updated successfully`);
+            closeModal();
+          } else {
+            snackbar.error(`Failed to update ${displayName} channel`);
+          }
+        })
+        .catch(() => {
+          setIsLoading(false);
+          snackbar.error(`Failed to update ${displayName} channel`);
+        });
+      return;
+    }
+
     let payload;
 
     if (provider === 'ms_teams') {
@@ -325,6 +373,33 @@ const MessagingIntegrationTile = ({
 
   const handleDelete = () => {
     setIsLoading(true);
+
+    const inst = installationData?.[0];
+    if (inst?._origin === 'integration') {
+      apiIntegrations
+        .deleteIntegrations({
+          integration_name: provider,
+          integration_config_name: inst._integration_name,
+          source: 'user',
+        })
+        .then((res) => {
+          setIsLoading(false);
+          if (res?.data?.data?.integrations_delete_config?.status) {
+            snackbar.success(`${displayName} configuration deleted successfully`);
+            listMessagingPlatform();
+          } else {
+            snackbar.error(`Failed to delete ${displayName} configuration`);
+          }
+          setDeleteConfig(false);
+        })
+        .catch(() => {
+          setIsLoading(false);
+          setDeleteConfig(false);
+          snackbar.error(`Failed to delete ${displayName} configuration`);
+        });
+      return;
+    }
+
     apiAccount
       .deleteMessagingPlatform(installationData?.[0]?.id)
       .then((res) => {

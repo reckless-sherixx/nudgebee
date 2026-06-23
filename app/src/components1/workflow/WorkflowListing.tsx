@@ -51,6 +51,11 @@ const playIcon = require('@assets/play-circle.svg');
 // so both agree on what counts as "done."
 const TERMINAL_EXECUTION_STATUSES = ['CANCELED', 'CANCELLED', 'COMPLETED', 'COMPLETE', 'COMPLETE_WITH_ERROR', 'FAILED', 'TERMINATED', 'TIMED_OUT'];
 
+// Background refresh cadence for the listing. While the tab is visible the
+// current page is silently re-fetched every 10s so running executions and
+// newly started runs surface without a manual refresh.
+const WORKFLOW_LISTING_POLL_INTERVAL_MS = 10000;
+
 // Snapshot of the most recent polled state for a triggered execution.
 // `closeTime` is only set once Temporal reports a terminal status;
 // `startTime` is seeded locally at trigger and replaced with the server
@@ -233,6 +238,24 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
 
   // Interval handle for post-cancel status polling; cleared on unmount.
   const cancelPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Guards the 10s background listing poll so a slow request can't stack: a tick
+  // is skipped while the previous silent fetch is still in flight.
+  const silentPollInFlightRef = useRef(false);
+
+  // Monotonic request id: only the newest listWorkflows response is allowed to
+  // write state, so a slow background poll can't clobber a fresher user-driven
+  // filter/page change that resolved first.
+  const requestCountRef = useRef(0);
+
+  // Drops responses that resolve after unmount.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Per-workflow polling started after a manual trigger. Polls
   // getWorkflowExecution until Temporal returns a terminal status, then
@@ -1056,12 +1079,16 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
   };
 
   const listWorkflows = useCallback(
-    (page: number, pageSize: number, offsetToken: string) => {
+    (page: number, pageSize: number, offsetToken: string, silent = false) => {
       if (!accountId) {
-        return;
+        return Promise.resolve();
       }
 
-      setLoading(true);
+      const currentRequestId = ++requestCountRef.current;
+
+      // Silent (background poll) refreshes skip the loading flag so the table
+      // spinner / refresh button / modal loaders don't flicker every 10s.
+      if (!silent) setLoading(true);
       const getStatusFilter = (status: string) => {
         if (!status || status === 'All') {
           return undefined;
@@ -1108,7 +1135,7 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
       const triggerTypeFilter = getTriggerTypeFilter(selectedTriggerType);
       const createdByFilter = !selectedCreatedBy || selectedCreatedBy === 'All' ? undefined : selectedCreatedBy;
 
-      apiWorkflow
+      return apiWorkflow
         .listWorkflows(
           accountId,
           statusFilter,
@@ -1121,6 +1148,9 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
           createdByFilter
         )
         .then((res: any) => {
+          // Ignore a stale response (a newer request superseded it) or one that
+          // resolved after unmount.
+          if (!isMountedRef.current || currentRequestId !== requestCountRef.current) return;
           if (res?.data?.workflow_list) {
             const workflowList = res.data.workflow_list;
             const workflows = workflowList.workflows || [];
@@ -1284,13 +1314,19 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
             setTotalRows(0);
           }
 
-          setLoading(false);
+          if (!silent) setLoading(false);
         })
         .catch((error) => {
+          // Ignore errors from a superseded request or after unmount.
+          if (!isMountedRef.current || currentRequestId !== requestCountRef.current) return;
           console.error('Error fetching workflows:', error);
-          setData([]);
-          setTotalRows(0);
-          setLoading(false);
+          // A failed background poll must not blank the table the user is
+          // viewing; only surface the empty/error state for foreground loads.
+          if (!silent) {
+            setData([]);
+            setTotalRows(0);
+            setLoading(false);
+          }
         });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
@@ -1341,6 +1377,32 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
     listWorkflows(1, rowsPerPage, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, selectedStatus, selectedLastExecutionStatus, selectedTriggerType, committedSearchName, committedSelectedTags, selectedCreatedBy]);
+
+  // Background listing refresh: while the tab is visible, silently re-fetch the
+  // current page every 10s so running executions and newly started runs surface
+  // without a manual refresh. Paused when the tab is hidden; a tick is skipped
+  // while a prior silent fetch is still in flight. Reads page/size/token from
+  // refs so it always targets the page the user is on; filters come from the
+  // current listWorkflows closure (re-created when filters change → new interval).
+  useEffect(() => {
+    if (!accountId) return;
+    const tick = () => {
+      if (document.hidden || silentPollInFlightRef.current) return;
+      const page = currentPageRef.current;
+      const size = rowsPerPageRef.current;
+      const token = pageOffsetTokensRef.current[page] ?? ((page - 1) * size).toString();
+      silentPollInFlightRef.current = true;
+      // Call inside the .then so a synchronous throw is captured by the promise
+      // chain and .finally still clears the lock (otherwise polling would stall).
+      Promise.resolve()
+        .then(() => listWorkflows(page, size, token, true))
+        .finally(() => {
+          silentPollInFlightRef.current = false;
+        });
+    };
+    const handle = setInterval(tick, WORKFLOW_LISTING_POLL_INTERVAL_MS);
+    return () => clearInterval(handle);
+  }, [accountId, listWorkflows]);
 
   // Check AI workflow feature flag
   useEffect(() => {

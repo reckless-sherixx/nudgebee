@@ -11,13 +11,11 @@ from sqlalchemy.orm import Session
 
 from notifications_server import teams_app, slack_app, sync_engine
 from notifications_server.configs.settings import settings
-from notifications_server.exceptions.exceptions import Err
 from notifications_server.message_templates.base import render_success_page
 from notifications_server.repositories.oauth_repository import (
     find_installation_by_tenant_and_platform,
     update_state_tenant,
 )
-from notifications_server.services.google_chat.google_chat import GoogleChatService
 from notifications_server.services.ms_teams.ms_teams import MsTeamsService
 from notifications_server.services.discord.discord import DiscordService
 from notifications_server.clients.discord_client import DiscordClient
@@ -66,52 +64,6 @@ async def ms_teams_oauth_redirect(request: Request, data: Dict[Any, Any]):
     service = MsTeamsService(sync_engine)
     service.save_teams_installation(teams_app.client_id, tenant_id, token_result, account, user_email)
     success_html = render_success_page("MS-Teams", settings.base_url)
-
-    return HTMLResponse(content=success_html)
-
-
-_google_oauth_code_verifiers: Dict[str, str] = {}
-
-
-@router.get("/install/google")
-async def google_chat_install():
-    service = GoogleChatService(sync_engine)
-    flow = service.get_google_flow()
-    flow.redirect_uri = settings.google_chat_redirect_uri
-    authorization_url, state = flow.authorization_url(
-        access_type="offline", prompt="consent", include_granted_scopes="true", state=str(uuid4())
-    )
-    if flow.code_verifier:
-        _google_oauth_code_verifiers[state] = flow.code_verifier
-    return {"url": authorization_url}
-
-
-@router.post("/callback/google")
-async def google_chat_oauth_redirect(request: Request, data: Dict[Any, Any]):
-    tenant_id = data.pop("tenant_id", None)
-    if tenant_id is None:
-        raise ValueError(400, Err.OS0010, ["tenant_id"])
-
-    user_email = request.headers.get("x-user-email", None)
-
-    LOG.info(f"Google Chat Installation request for tenant: {tenant_id}")
-    with Session(sync_engine) as session:
-        installations = find_installation_by_tenant_and_platform(session, tenant_id, "google_chat")
-    if len(installations) > 0:
-        LOG.info(f"Google Chat Installation exists for tenant: {tenant_id}")
-        raise HTTPException(status_code=400, detail=INSTALLATION_ALREADY_EXISTS)
-
-    state = request.query_params.get("state")
-    code_verifier = _google_oauth_code_verifiers.pop(state, None) if state else None
-
-    service = GoogleChatService(sync_engine)
-    flow = service.get_google_flow()
-    flow.redirect_uri = settings.google_chat_redirect_uri
-    full_uri = "https://" + request.url.hostname + request.url.path + "?" + request.url.query
-    flow.fetch_token(authorization_response=full_uri, code_verifier=code_verifier)
-    credentials = flow.credentials
-    service.save_google_chat_installation(tenant_id, credentials, user_email)
-    success_html = render_success_page("Google Chat", settings.base_url)
 
     return HTMLResponse(content=success_html)
 

@@ -139,43 +139,5 @@ class DiscordClient:
             return {"ok": False, "error": str(e)}
 
     @classmethod
-    def channels_list(cls, token: str) -> Dict[str, Any]:
-        """
-        List text channels the Discord bot has access to across all guilds.
-        """
-        headers = cls.get_headers(token)
-        try:
-            # 1. Get guilds the bot is in
-            guilds_resp = requests.get(f"{cls.BASE_URL}/users/@me/guilds", headers=headers, timeout=10)
-            if guilds_resp.status_code != 200:
-                LOG.error("Failed to fetch guilds: %s", guilds_resp.text)
-                return {"ok": False, "error": guilds_resp.text}
-            
-            guilds = guilds_resp.json()
-            channels = []
-            
-            # 2. For each guild, get channels
-            for guild in guilds:
-                guild_id = guild["id"]
-                guild_name = guild["name"]
-                ch_resp = requests.get(f"{cls.BASE_URL}/guilds/{guild_id}/channels", headers=headers, timeout=10)
-                if ch_resp.status_code == 200:
-                    guild_channels = ch_resp.json()
-                    for ch in guild_channels:
-                        # 0 is GUILD_TEXT
-                        if ch.get("type") == 0:
-                            channels.append({
-                                "id": ch["id"],
-                                "name": f"{guild_name} / #{ch['name']}"
-                            })
-                else:
-                    LOG.error("Failed to fetch channels for guild %s: %s", guild_id, ch_resp.text)
-            
-            return {"ok": True, "channels": channels}
-        except Exception as e:
-            LOG.exception("Error listing Discord channels")
-            return {"ok": False, "error": str(e)}
-
-    @classmethod
     def users_list(cls, token: str, **kwargs) -> Dict[str, Any]:
         return {"ok": True, "members": []}

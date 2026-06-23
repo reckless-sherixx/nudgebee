@@ -1448,6 +1448,41 @@ func (s *WorkflowDao) SetLiveVersion(ctx context.Context, tenantID, accountID, w
 	return nil
 }
 
+// DeleteWorkflowVersion hard-deletes a single workflow_versions row. The
+// EXISTS guard is the single source of truth for both authorization and
+// safety: the row is deleted ONLY when its parent workflow belongs to the
+// caller's tenant+account AND the version is neither the live nor the
+// draft-base pointer. Scoping the DELETE to the tenant-owned workflow closes
+// a cross-tenant IDOR — a caller from another tenant passing a foreign
+// (workflowID, versionID) finds no matching workflow row, so the guard fails
+// and nothing is deleted. The live/draft check inside the same statement also
+// keeps the protection correct under a concurrent make-live / checkout without
+// a serializable transaction. Returns sql.ErrNoRows when the row doesn't
+// exist, isn't owned by this tenant/account, or is currently protected.
+func (s *WorkflowDao) DeleteWorkflowVersion(ctx context.Context, tenantID, accountID, workflowID, versionID string) error {
+	if tenantID == "" || accountID == "" {
+		return fmt.Errorf("tenantID and accountID must not be empty")
+	}
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM workflow_versions
+		WHERE id = $1 AND workflow_id = $2
+		  AND EXISTS (
+		    SELECT 1 FROM workflows w
+		    WHERE w.id = $2 AND w.tenant_id = $3 AND w.account_id = $4
+		      AND (w.live_version_id IS NULL OR w.live_version_id <> $1)
+		      AND (w.draft_version_id IS NULL OR w.draft_version_id <> $1)
+		  )
+	`, versionID, workflowID, tenantID, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete workflow version: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // SetDraftVersionID points workflows.draft_version_id at versionID without
 // touching definition / status / live pointer. Used by the Restore service
 // path after the draft definition has been overwritten with a target version's

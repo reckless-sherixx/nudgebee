@@ -292,22 +292,22 @@ func mapGrafanaStatus(status string) event.EventStatus {
 	}
 }
 
-// mapGrafanaSeverity maps Grafana/Prometheus lowercase severity to EventPriortiy constants.
-func mapGrafanaSeverity(severity string) event.EventPriortiy {
+// mapGrafanaSeverity maps Grafana/Prometheus lowercase severity to EventPriority constants.
+func mapGrafanaSeverity(severity string) event.EventPriority {
 	switch strings.ToLower(strings.TrimSpace(severity)) {
 	case "critical":
-		return event.EventPriortiyHigh
+		return event.EventPriorityHigh
 	case "high":
-		return event.EventPriortiyHigh
+		return event.EventPriorityHigh
 	case "warning", "warn", "medium":
-		return event.EventPriortiyMedium
+		return event.EventPriorityMedium
 	case "low":
-		return event.EventPriortiyLow
+		return event.EventPriorityLow
 	case "info", "informational", "none":
-		return event.EventPriortiyInfo
+		return event.EventPriorityInfo
 	case "debug":
-		return event.EventPriortiyDebug
+		return event.EventPriorityDebug
 	default:
-		return event.EventPriortiyLow
+		return event.EventPriorityLow
 	}
 }

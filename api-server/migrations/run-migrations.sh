@@ -190,9 +190,54 @@ MSG
     echo "Bootstrap (state=$bootstrap_state): pre-migrated database detected."
     echo "Baseline source: $baseline_source"
     echo "Forcing tracker to version $BASELINE_VERSION..."
+    # Guard against phantom baselines. A baseline that has no backing file in
+    # ./migrations/app/ wedges every subsequent `migrate up` with:
+    #   "no migration found for version <V>: read down for version <V> ... file does not exist"
+    # because golang-migrate needs to read the current version's metadata before
+    # walking forward. Fail loudly here instead of leaving a dirty tracker.
+    if [ -z "$(find ./migrations/app -maxdepth 1 -name "${BASELINE_VERSION}_*.up.sql" -print -quit 2>/dev/null)" ]; then
+        echo "ERROR: baseline version $BASELINE_VERSION (source: $baseline_source) has no" >&2
+        echo "       matching file at ./migrations/app/${BASELINE_VERSION}_*.up.sql." >&2
+        echo "       Refusing to force the tracker to a non-existent migration." >&2
+        echo "       Resolution: pick a baseline whose file exists in this image." >&2
+        exit 1
+    fi
     migrate -path ./migrations/app -database "$MIGRATE_DB_URL" force "$BASELINE_VERSION"
 else
     echo "Bootstrap not needed (state=$bootstrap_state); proceeding with normal migrate up."
+fi
+
+# Steady-state guard: if the tracker already points at a version with no backing
+# file, `migrate up` will die with "no migration found for version <V>". This
+# happens when someone runs `migrate force <ts>` (or sets CUTOVER_BASELINE_OVERRIDE)
+# with a timestamp that has no corresponding ./migrations/app/<ts>_*.up.sql.
+# Catch it here so the operator gets an actionable message instead of a cryptic
+# "read down for version <V> ... file does not exist".
+current_version=$(psql "$APP_DATABASE_URL" -v ON_ERROR_STOP=1 -tAq -c "
+  SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema='nudgebee' AND table_name='schema_migrations')
+    THEN COALESCE((SELECT version::text FROM nudgebee.schema_migrations LIMIT 1), '')
+    ELSE ''
+  END;
+" | tr -d '[:space:]')
+if [ -n "$current_version" ] && [ -z "$(find ./migrations/app -maxdepth 1 -name "${current_version}_*.up.sql" -print -quit 2>/dev/null)" ]; then
+    cat <<MSG >&2
+
+ERROR: tracker points at a phantom version $current_version — no file matches
+       ./migrations/app/${current_version}_*.up.sql in this image.
+
+This usually means someone ran 'migrate force <ts>' (or set CUTOVER_BASELINE_OVERRIDE)
+with a timestamp that never existed as a migration file, or the file was deleted
+after being applied.
+
+Resolution: identify the highest real applied version (inspect schema, or check
+hdb_catalog.hdb_version.cli_state) and reset the tracker:
+
+  UPDATE nudgebee.schema_migrations SET version=<real_version>, dirty=false;
+
+MSG
+    exit 1
 fi
 
 migrate -path ./migrations/app -database "$MIGRATE_DB_URL" up

@@ -649,6 +649,9 @@ class Settings(BaseSettings):
 
     # Security tokens
     nudgebee_secret: str = Field("", validation_alias=AliasChoices("NUDGEBEE_SECRET", "nudgebee_secret"))
+    nudgebee_encryption_key: str = Field(
+        "", validation_alias=AliasChoices("NUDGEBEE_ENCRYPTION_KEY", "nudgebee_encryption_key")
+    )
     action_api_server_token: str = Field(
         "", validation_alias=AliasChoices("ACTION_API_SERVER_TOKEN", "action_api_server_token")
     )
