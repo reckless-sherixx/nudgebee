@@ -464,30 +464,6 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
   onPendingDataConsumed,
 }) => {
   const [localData, setLocalData] = useState(taskData || {});
-
-  // Field-level validation errors shown inline must reflect the in-flight
-  // `localData`, not the parent's committed errors. The parent only
-  // re-validates on Save (handleSave → onTaskDataChange), so reading the
-  // committed prop left a required-field error like "account id is required"
-  // visible even after the user selected a value (#31887). Recomputing against
-  // localData with the same validator the parent uses clears each field's error
-  // the moment it becomes valid. When the task has no input schema (raw-JSON
-  // config path), validateTaskData reports nothing, so fall back to the
-  // committed prop and don't silently drop any node-level errors.
-  const validationErrors = useMemo(() => {
-    if (!selectedActionType) return committedValidationErrors;
-    const schema = taskDefinitions.find((td: any) => td.name === selectedActionType);
-    if (!schema?.input_schema) return committedValidationErrors;
-    return validateTaskData(selectedActionType, localData, taskDefinitions).errors;
-  }, [selectedActionType, localData, taskDefinitions, committedValidationErrors]);
-  // Non-blocking date-format lint warnings (e.g. mixing strftime %-codes with the Go
-  // reference layout). Surfaced as an advisory banner, not per-field errors.
-  const validationWarnings = useMemo(() => {
-    if (!selectedActionType) return {} as Record<string, string>;
-    const schema = taskDefinitions.find((td: any) => td.name === selectedActionType);
-    if (!schema?.input_schema) return {} as Record<string, string>;
-    return validateTaskData(selectedActionType, localData, taskDefinitions).warnings;
-  }, [selectedActionType, localData, taskDefinitions]);
   // Snapshot of the last data committed to the parent (via Save or external sync).
   // Used to detect "is this edit dirty vs. what's persisted in workflow state?" so
   // the Save button can tick out only when there's something to save and the close
@@ -524,6 +500,14 @@ const ActionDetailsSidebar: React.FC<ActionDetailsSidebarProps> = ({
     if (!schema?.input_schema) return committedValidationErrors;
     return validateTaskData(selectedActionType, localData, taskDefinitions).errors;
   }, [selectedActionType, localData, taskDefinitions, committedValidationErrors]);
+  // Non-blocking date-format lint warnings (e.g. mixing strftime %-codes with the Go
+  // reference layout). Surfaced as an advisory banner, not per-field errors.
+  const validationWarnings = useMemo(() => {
+    if (!selectedActionType) return {} as Record<string, string>;
+    const schema = taskDefinitions.find((td: any) => td.name === selectedActionType);
+    if (!schema?.input_schema) return {} as Record<string, string>;
+    return validateTaskData(selectedActionType, localData, taskDefinitions).warnings;
+  }, [selectedActionType, localData, taskDefinitions]);
 
   // Refs for stable access in callbacks without adding to dependency arrays
   const taskDefinitionsRef = useRef(taskDefinitions);
