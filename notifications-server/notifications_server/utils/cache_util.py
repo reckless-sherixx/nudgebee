@@ -1,11 +1,11 @@
 import time
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional
 
 from notifications_server.configs.settings import settings
 
 
 class EventCache:
-    _instance: Optional["EventCache"] = None
+    _instance: ClassVar[Optional["EventCache"]] = None
     cache: Dict[str, Dict[str, Any]]
 
     def __new__(cls, *args: Any, **kwargs: Any) -> "EventCache":
