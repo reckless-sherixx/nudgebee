@@ -17,7 +17,7 @@ import (
 )
 
 // CheckTriageRules evaluates all matching rules for an event and returns the result
-func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event) (*TriageRuleResult, error) {
+func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event, occurrenceNumber int) (*TriageRuleResult, error) {
 	if event.CloudAccountId == nil || event.Tenant == nil {
 		return nil, nil
 	}
@@ -33,11 +33,10 @@ func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event) (*T
 		return nil, nil
 	}
 
-	// Look up occurrence number for this event (needed for occurrence-based rules)
-	var occurrenceNumber int
-	if event.Fingerprint != nil {
-		occurrenceNumber = getEventOccurrenceNumber(ctx, db, event.Id, *event.Fingerprint, *event.CloudAccountId)
-	}
+	// Ensure background worker is running for batch updates
+	initBatcher.Do(func() {
+		go runRuleMatchBatcher(context.Background(), db)
+	})
 
 	// Evaluate rules in priority order
 	var suppressionResult *SuppressionResult
@@ -56,8 +55,12 @@ func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event) (*T
 			if suppressionResult == nil {
 				suppressionResult = applySuppressionRule(&rule)
 				suppressionRuleID = rule.ID
-				// Update match count only for the winning rule
-				go updateRuleMatchCount(ctx, db, rule.ID)
+				// Send rule ID to batch channel
+				select {
+				case matchCountChan <- rule.ID:
+				default:
+					slog.WarnContext(ctx, "matchCountChan is full, dropping match count update", "rule_id", rule.ID)
+				}
 				matches = append(matches, pendingMatch{rule.ID, rule.RuleType, rule.Action})
 				slog.InfoContext(ctx, "Suppression rule matched",
 					"event_id", event.Id,
@@ -74,7 +77,12 @@ func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event) (*T
 			} else {
 				scoreAdjustment.Adjustment += adj.Adjustment
 			}
-			go updateRuleMatchCount(ctx, db, rule.ID)
+			// Send rule ID to batch channel
+			select {
+			case matchCountChan <- rule.ID:
+			default:
+				slog.WarnContext(ctx, "matchCountChan is full, dropping match count update", "rule_id", rule.ID)
+			}
 			matches = append(matches, pendingMatch{rule.ID, rule.RuleType, rule.Action})
 			slog.InfoContext(ctx, "Scoring rule matched",
 				"event_id", event.Id,
@@ -86,8 +94,12 @@ func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event) (*T
 			if autoClassification == nil {
 				autoClassification = applyClassificationRule(&rule)
 				classificationRuleID = rule.ID
-				// Update match count only for the winning rule
-				go updateRuleMatchCount(ctx, db, rule.ID)
+				// Send rule ID to batch channel
+				select {
+				case matchCountChan <- rule.ID:
+				default:
+					slog.WarnContext(ctx, "matchCountChan is full, dropping match count update", "rule_id", rule.ID)
+				}
 				matches = append(matches, pendingMatch{rule.ID, rule.RuleType, rule.Action})
 				slog.InfoContext(ctx, "Classification rule matched",
 					"event_id", event.Id,
@@ -140,9 +152,30 @@ func CheckTriageRules(ctx context.Context, db *sqlx.DB, event *models.Event) (*T
 	return result, nil
 }
 
+type triageRulesCacheEntry struct {
+	rules     []TriageRule
+	expiresAt time.Time
+}
+
+var (
+	triageRulesCache   = make(map[string]triageRulesCacheEntry)
+	triageRulesCacheMu sync.RWMutex
+	triageRulesTTL     = 60 * time.Second
+)
+
 // LoadMatchingRules loads all enabled rules for the given tenant/account
 // System rules (tenant_id IS NULL AND account_id IS NULL) are included unless overridden
 func LoadMatchingRules(ctx context.Context, db *sqlx.DB, tenantID, accountID string) ([]TriageRule, error) {
+	cacheKey := tenantID + ":" + accountID
+
+	triageRulesCacheMu.RLock()
+	entry, found := triageRulesCache[cacheKey]
+	if found && time.Now().Before(entry.expiresAt) {
+		triageRulesCacheMu.RUnlock()
+		return entry.rules, nil
+	}
+	triageRulesCacheMu.RUnlock()
+
 	// First, get overrides for this account
 	overrides, err := getAccountOverrides(ctx, db, accountID)
 	if err != nil {
@@ -195,6 +228,13 @@ func LoadMatchingRules(ctx context.Context, db *sqlx.DB, tenantID, accountID str
 
 		filteredRules = append(filteredRules, *rule)
 	}
+
+	triageRulesCacheMu.Lock()
+	triageRulesCache[cacheKey] = triageRulesCacheEntry{
+		rules:     filteredRules,
+		expiresAt: time.Now().Add(triageRulesTTL),
+	}
+	triageRulesCacheMu.Unlock()
 
 	return filteredRules, nil
 }
@@ -641,6 +681,33 @@ func updateRuleMatchCount(ctx context.Context, db *sqlx.DB, ruleID string) {
 	_, err := db.ExecContext(ctx, query, ruleID)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to update rule match count", "error", err, "rule_id", ruleID)
+	}
+}
+
+var (
+	matchCountChan = make(chan string, 10000)
+	initBatcher    sync.Once
+)
+
+func runRuleMatchBatcher(ctx context.Context, db *sqlx.DB) {
+	counts := make(map[string]int)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case ruleID := <-matchCountChan:
+			counts[ruleID]++
+		case <-ticker.C:
+			if len(counts) == 0 {
+				continue
+			}
+			batch := counts
+			counts = make(map[string]int)
+			for id, count := range batch {
+				updateRuleMatchCountBy(ctx, db, id, count)
+			}
+		}
 	}
 }
 
