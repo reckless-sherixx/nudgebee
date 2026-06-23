@@ -26,6 +26,7 @@ import ConfigurationManager from './ConfigurationManager';
 import CreateWorkflowOptionsModal from './components/CreateWorkflowOptionsModal';
 import CreateWorkflowFromCodeModal from './components/CreateWorkflowFromCodeModal';
 import WorkflowTemplatesModal from './components/WorkflowTemplatesModal';
+import { getAutomationToggleAction } from './automationMenu';
 import {
   manualTriggerIcon,
   SettingsIcon,
@@ -195,8 +196,6 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
   // If the user opens the delete modal for A, closes it, then opens for B
   // before A's request resolves, A's stale result must NOT clobber B's state.
   const activeDeleteWorkflowIdRef = useRef<string | null>(null);
-  const [pauseModalOpen, setPauseModalOpen] = useState<boolean>(false);
-  const [resumeModalOpen, setResumeModalOpen] = useState<boolean>(false);
   const [stopExecutionModalOpen, setStopExecutionModalOpen] = useState<boolean>(false);
   const [stopExecutionLoading, setStopExecutionLoading] = useState<boolean>(false);
   const [triggerModalOpen, setTriggerModalOpen] = useState<boolean>(false);
@@ -359,16 +358,18 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
       const pauseResumeApplicable = workflow?.definition?.triggers?.some((trigger: any) => ['schedule', 'event', 'webhook'].includes(trigger.type));
 
       if (pauseResumeApplicable) {
-        // Show pause button only if workflow is not paused
-        if (workflow?.status !== 'PAUSED') {
+        // State-aware toggle (see getAutomationToggleAction): Active -> Pause,
+        // Paused -> Activate, anything else -> neither.
+        const toggleAction = getAutomationToggleAction(workflow?.status);
+        if (toggleAction === 'pause') {
           MENU_ITEMS.push({
             label: 'Pause',
             id: 1,
             icon: pauseIcon,
           });
-        } else {
+        } else if (toggleAction === 'activate') {
           MENU_ITEMS.push({
-            label: 'Resume',
+            label: 'Activate',
             id: 2,
             icon: playIcon,
           });
@@ -412,11 +413,9 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
         }
       })();
     } else if (menuItem.id === 1) {
-      setSelectedWorkflow(workflow);
-      setPauseModalOpen(true);
+      handlePauseWorkflow(workflow);
     } else if (menuItem.id === 2) {
-      setSelectedWorkflow(workflow);
-      setResumeModalOpen(true);
+      handleResumeWorkflow(workflow);
     } else if (menuItem.id === 3) {
       setSelectedWorkflow(workflow);
       setTriggerModalOpen(true);
@@ -456,15 +455,15 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
     activeDeleteWorkflowIdRef.current = null;
   };
 
-  const handlePauseWorkflow = async () => {
+  const handlePauseWorkflow = async (workflow: any) => {
     setLoading(true);
     try {
-      const response = await apiWorkflow.pauseWorkflow(accountId!, selectedWorkflow.id);
+      const response = await apiWorkflow.pauseWorkflow(accountId!, workflow.id);
       const errorMessage = parseHttpResponseBodyMessage(response);
       if (errorMessage) {
         snackbar.error(errorMessage);
       } else {
-        snackbar.success(`Automation "${selectedWorkflow.name}" paused successfully`);
+        snackbar.success(`Automation "${workflow.name}" paused successfully`);
         // Refresh current page
         const offsetToken = pageOffsetTokens[currentPage] ?? ((currentPage - 1) * rowsPerPage).toString();
         listWorkflows(currentPage, rowsPerPage, offsetToken);
@@ -472,28 +471,21 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
     } catch (_error) {
       console.error(_error);
 
-      snackbar.error(`Failed to pause automation "${selectedWorkflow.name}"`);
+      snackbar.error(`Failed to pause automation "${workflow.name}"`);
     } finally {
-      setPauseModalOpen(false);
-      setSelectedWorkflow({ id: '', name: '' });
       setLoading(false);
     }
   };
 
-  const handleClosePauseModal = () => {
-    setPauseModalOpen(false);
-    setSelectedWorkflow({ id: '', name: '' });
-  };
-
-  const handleResumeWorkflow = async () => {
+  const handleResumeWorkflow = async (workflow: any) => {
     setLoading(true);
     try {
-      const response = await apiWorkflow.resumeWorkflow(accountId!, selectedWorkflow.id);
+      const response = await apiWorkflow.resumeWorkflow(accountId!, workflow.id);
       const errorMessage = parseHttpResponseBodyMessage(response);
       if (errorMessage) {
         snackbar.error(errorMessage);
       } else {
-        snackbar.success(`Automation "${selectedWorkflow.name}" resumed successfully`);
+        snackbar.success(`Automation "${workflow.name}" activated successfully`);
         // Refresh current page
         const offsetToken = pageOffsetTokens[currentPage] ?? ((currentPage - 1) * rowsPerPage).toString();
         listWorkflows(currentPage, rowsPerPage, offsetToken);
@@ -501,17 +493,10 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
     } catch (_error) {
       console.error(_error);
 
-      snackbar.error(`Failed to resume automation "${selectedWorkflow.name}"`);
+      snackbar.error(`Failed to activate automation "${workflow.name}"`);
     } finally {
-      setResumeModalOpen(false);
-      setSelectedWorkflow({ id: '', name: '' });
       setLoading(false);
     }
-  };
-
-  const handleCloseResumeModal = () => {
-    setResumeModalOpen(false);
-    setSelectedWorkflow({ id: '', name: '' });
   };
 
   const handleOpenStopExecutionModal = useCallback((workflow: any) => {
@@ -1603,52 +1588,6 @@ const WorkflowListing: React.FC<WorkflowListingProps> = ({ accountId }) => {
               </Box>
             </Box>
           )}
-        </DialogContent>
-      </Modal>
-
-      <Modal
-        open={pauseModalOpen}
-        handleClose={handleClosePauseModal}
-        width='md'
-        title={`Pause Automation "${selectedWorkflow.name}"`}
-        loader={loading}
-        actionButtons={
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, px: 2, py: 2 }}>
-            <DsButton id='workflow-pause-cancel-btn' tone='secondary' size='md' onClick={handleClosePauseModal} disabled={loading}>
-              Cancel
-            </DsButton>
-            <DsButton id='workflow-pause-confirm-btn' size='md' onClick={handlePauseWorkflow} loading={loading}>
-              Pause
-            </DsButton>
-          </Box>
-        }
-      >
-        <DialogContent sx={{ padding: 'var(--ds-space-5)' }}>
-          <DialogContentText>Are you sure you want to pause this scheduled automation? It will stop executing until resumed.</DialogContentText>
-        </DialogContent>
-      </Modal>
-
-      <Modal
-        open={resumeModalOpen}
-        handleClose={handleCloseResumeModal}
-        width='md'
-        title={`Resume Automation "${selectedWorkflow.name}"`}
-        loader={loading}
-        actionButtons={
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, px: 2, py: 2 }}>
-            <DsButton id='workflow-resume-cancel-btn' tone='secondary' size='md' onClick={handleCloseResumeModal} disabled={loading}>
-              Cancel
-            </DsButton>
-            <DsButton id='workflow-resume-confirm-btn' size='md' onClick={handleResumeWorkflow} loading={loading}>
-              Resume
-            </DsButton>
-          </Box>
-        }
-      >
-        <DialogContent sx={{ padding: 'var(--ds-space-5)' }}>
-          <DialogContentText>
-            Are you sure you want to resume this scheduled automation? It will start executing according to its schedule.
-          </DialogContentText>
         </DialogContent>
       </Modal>
 
