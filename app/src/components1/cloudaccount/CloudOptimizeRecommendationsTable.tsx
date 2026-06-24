@@ -792,13 +792,13 @@ const CloudOptimizeRecommendationsTable = (props: {
                       config.showAlarmModal &&
                       !!row?.recommendation?.alarm_config &&
                       props.accountAccess !== 'readonly' &&
-                      hasWriteAccess(row?.account_id) &&
+                      hasWriteAccess(row?.account_id ?? selectedAccountId) &&
                       isActionableStatus;
                     const isApplying = applyingRecommendationId === row?.id;
                     const resolvedProvider = props.provider || (selectedCluster as any)?.cloud_provider || '';
                     const canExecuteCommand =
                       props.accountAccess !== 'readonly' &&
-                      hasWriteAccess(row?.account_id) &&
+                      hasWriteAccess(row?.account_id ?? selectedAccountId) &&
                       isActionableStatus &&
                       ['aws', 'azure', 'gcp'].includes(resolvedProvider.toLowerCase());
                     return (
