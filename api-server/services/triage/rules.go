@@ -163,6 +163,14 @@ var (
 	triageRulesTTL     = 60 * time.Second
 )
 
+// ClearTriageRulesCache invalidates the entire triage rules cache
+// This should be called whenever rules are created, updated, or deleted
+func ClearTriageRulesCache() {
+	triageRulesCacheMu.Lock()
+	triageRulesCache = make(map[string]triageRulesCacheEntry)
+	triageRulesCacheMu.Unlock()
+}
+
 // LoadMatchingRules loads all enabled rules for the given tenant/account
 // System rules (tenant_id IS NULL AND account_id IS NULL) are included unless overridden
 func LoadMatchingRules(ctx context.Context, db *sqlx.DB, tenantID, accountID string) ([]TriageRule, error) {
@@ -919,6 +927,7 @@ func CreateTriageRule(ctx context.Context, db *sqlx.DB, req CreateTriageRuleRequ
 		return nil, err
 	}
 
+	ClearTriageRulesCache()
 	return rule, nil
 }
 
@@ -1441,6 +1450,7 @@ func UpdateTriageRule(ctx context.Context, db *sqlx.DB, req UpdateTriageRuleRequ
 		return nil, fmt.Errorf("failed to update rule: %w", err)
 	}
 
+	ClearTriageRulesCache()
 	return &updatedRule, nil
 }
 
@@ -1454,6 +1464,9 @@ func DeleteTriageRule(ctx context.Context, db *sqlx.DB, ruleID string, hardDelet
 			  AND is_editable = TRUE
 		`
 		_, err := db.ExecContext(ctx, query, ruleID, cloudAccountID)
+		if err == nil {
+			ClearTriageRulesCache()
+		}
 		return err
 	}
 
@@ -1467,6 +1480,9 @@ func DeleteTriageRule(ctx context.Context, db *sqlx.DB, ruleID string, hardDelet
 		  AND is_editable = TRUE
 	`
 	_, err := db.ExecContext(ctx, query, ruleID, cloudAccountID)
+	if err == nil {
+		ClearTriageRulesCache()
+	}
 	return err
 }
 
@@ -1518,6 +1534,8 @@ func ToggleSystemRuleOverride(ctx context.Context, db *sqlx.DB, req ToggleSystem
 		"account_id", cloudAccountID,
 		"disabled", req.Disabled,
 	)
+
+	ClearTriageRulesCache()
 
 	return &ToggleSystemRuleOverrideResponse{
 		Success:      true,
