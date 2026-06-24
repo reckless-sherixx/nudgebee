@@ -1,6 +1,6 @@
 import logging
 import uuid
-from sqlite3 import IntegrityError
+from sqlalchemy.exc import IntegrityError
 
 from notifications_server.exceptions.common_exc import WrongArgumentsException
 from notifications_server.exceptions.exceptions import Err
@@ -54,8 +54,14 @@ class DiscordService:
             )
             self.session.add(installation)
             self.session.commit()
-            self.session.close()
             return installation
         except IntegrityError as exc:
+            self.session.rollback()
             LOG.exception("Unable to save discord installation: %s", exc)
             raise WrongArgumentsException(Err.OS0009, [exc])
+        except Exception as exc:
+            self.session.rollback()
+            LOG.exception("Unexpected error saving discord installation: %s", exc)
+            raise
+        finally:
+            self.session.close()
