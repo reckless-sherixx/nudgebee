@@ -83,6 +83,11 @@ function buildAzureAdvisorMitigation(recommendation: Record<string, any>): strin
   return parts.length > 0 ? [parts.join('\n\n')] : null;
 }
 
+const TEMPLATE_ALIASES: Record<string, string[]> = {
+  INSTANCE_ID: ['recommendation.instance_id', 'recommendation.cpu.resource_id', 'resource_name'],
+  INSTANCE_TYPE: ['recommendation.recommended_instance_type', 'recommendation.recommendedInstances.0.instanceType'],
+};
+
 export function interpolateMitigations(mitigations: string[] | undefined, recommendation: Record<string, any> | undefined): string[] | undefined {
   if (!mitigations || !recommendation) {
     return mitigations;
@@ -98,31 +103,42 @@ export function interpolateMitigations(mitigations: string[] | undefined, recomm
     }
   }
 
+  const resolvePath = (path: string): string | undefined => {
+    if (path === 'region') {
+      const parts = recommendation.account_object_id?.split(':');
+      const v = parts?.[3];
+      return v || undefined;
+    }
+    if (path === 'resource_group') {
+      // Try extracting from resource_id first (may be an Azure resource path),
+      // then fall back to account_object_id which contains the full Azure resource path
+      const rid = recommendation.resource_id || '';
+      const rgMatch = rid.match(/resourceGroups\/([^/]+)/i);
+      if (rgMatch?.[1]) return rgMatch[1];
+      const aoid = recommendation.account_object_id || '';
+      const aoMatch = aoid.match(/resourcegroups\/([^/]+)/i);
+      return aoMatch?.[1] || undefined;
+    }
+
+    const segments = path.split('.');
+    let value: any = recommendation;
+    for (const seg of segments) {
+      if (value == null) break;
+      value = value[seg];
+    }
+    return value != null && value !== '' ? String(value) : undefined;
+  };
+
   return mitigations.map((m) =>
-    m.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
-      if (path === 'region') {
-        const parts = recommendation.account_object_id?.split(':');
-        return parts?.[3] || match;
+    m.replace(/\{\{([\w.]+(?:\s*\|\|\s*[\w.]+)*)\}\}/g, (match, expr) => {
+      // Support "a || b" fallback syntax in templates: try each path left-to-right, return the first that resolves.
+      // If the entire expr is a known alias, expand it to its fallback path list.
+      const paths = TEMPLATE_ALIASES[expr.trim()] ?? expr.split(/\s*\|\|\s*/);
+      for (const path of paths) {
+        const resolved = resolvePath(path.trim());
+        if (resolved !== undefined) return resolved;
       }
-      if (path === 'resource_group') {
-        // Try extracting from resource_id first (may be an Azure resource path),
-        // then fall back to account_object_id which contains the full Azure resource path
-        const rid = recommendation.resource_id || '';
-        const rgMatch = rid.match(/resourceGroups\/([^/]+)/i);
-        if (rgMatch?.[1]) return rgMatch[1];
-        const aoid = recommendation.account_object_id || '';
-        const aoMatch = aoid.match(/resourcegroups\/([^/]+)/i);
-        return aoMatch?.[1] || match;
-      }
-      const segments = path.split('.');
-      let value: any = recommendation;
-      for (const seg of segments) {
-        if (value == null) {
-          break;
-        }
-        value = value[seg];
-      }
-      return value != null && value !== '' ? String(value) : match;
+      return match;
     })
   );
 }
@@ -139,7 +155,7 @@ export const recommendationDetails = {
       mitigations: [
         `Run describe-instances command (OSX/Linux/UNIX) using the ID of the Amazon EC2 instance that you want to configure as the identifier parameter to apply the specified tagging schema (i.e. Name, Role, Environment, and Owner) to the selected EC2 instance (the command does not produce an output):
 \`\`\`
-aws ec2 create-tags --resources {{recommendation.instance_id}} --tags Key=Name,Value=Prod-Web-Server Key=Role,Value=Web-Tier Key=Environment,Value=Production Key=Owner,Value=DevOps-Team
+aws ec2 create-tags --resources {{INSTANCE_ID}} --tags Key=Name,Value=Prod-Web-Server Key=Role,Value=Web-Tier Key=Environment,Value=Production Key=Owner,Value=DevOps-Team
 \`\`\``,
       ],
       compliances: ['APRA', 'MAS', 'NIST4'],
@@ -161,7 +177,7 @@ aws ec2 create-tags --resources {{recommendation.instance_id}} --tags Key=Name,V
 \`\`\`
 aws ec2 modify-instance-attribute
 --region {{region}}
---instance-id {{recommendation.instance_id}}
+--instance-id {{INSTANCE_ID}}
 --disable-api-termination
 \`\`\`
 `,
@@ -745,7 +761,7 @@ Create a Dead Letter Queue (DLQ) in Amazon SQS:
         `
         AWS CLI command to enable Storage AutoScaling for RDS instance:
         \`\`\`
-        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --max-allocated-storage 150 --apply-immediately
+        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --max-allocated-storage 150 --apply-immediately
         \`\`\`
         `,
       ],
@@ -804,7 +820,7 @@ Create a Dead Letter Queue (DLQ) in Amazon SQS:
         \`\`\`
         aws rds modify-db-instance
         --region {{region}}
-        --db-instance-identifier {{recommendation.instance_id}}
+        --db-instance-identifier {{INSTANCE_ID}}
         --auto-minor-version-upgrade
         --apply-immediately
         \`\`\`
@@ -865,7 +881,7 @@ Create a Dead Letter Queue (DLQ) in Amazon SQS:
 \`\`\`
         aws rds modify-db-instance
         --region {{region}}
-        --db-instance-identifier {{recommendation.instance_id}}
+        --db-instance-identifier {{INSTANCE_ID}}
         --enable-performance-insights
         --performance-insights-retention-period 7
         --performance-insights-kms-key-id arn:aws:kms:us-east-1:123456789012:key/abcdabcd-1234-1234-1234-abcdabcdabcd
@@ -924,7 +940,7 @@ Create a Dead Letter Queue (DLQ) in Amazon SQS:
 \`\`\`
         aws rds modify-db-instance
         --region {{region}}
-        --db-instance-identifier {{recommendation.instance_id}}
+        --db-instance-identifier {{INSTANCE_ID}}
         --backup-retention-period 7
         --apply-immediately
 \`\`\`
@@ -4047,17 +4063,17 @@ az vmss update \\
 
         - Run stop-instances command (OSX/Linux/UNIX) to stop the Amazon EC2 instance that you want to reconfigure:
 \`\`\`
-        aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+        aws ec2 stop-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 
         - Run modify-instance-attribute command (OSX/Linux/UNIX) to change the instance type of the stopped Amazon EC2 instance to the latest generation:
 \`\`\`
-        aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type '{"Value": "{{recommendation.recommended_instance_type}}"}'
+        aws ec2 modify-instance-attribute --region {{region}} --instance-id {{INSTANCE_ID}} --instance-type '{"Value": "{{INSTANCE_TYPE}}"}'
 \`\`\`
 
         - Run start-instances command (OSX/Linux/UNIX) to start the Amazon EC2 instance with the new instance type:
 \`\`\`
-        aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+        aws ec2 start-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 `,
       ],
@@ -4206,7 +4222,7 @@ az vmss update \\
 \`\`\`
         aws rds modify-db-instance
             --region {{region}}
-            --db-instance-identifier {{recommendation.instance_id}}
+            --db-instance-identifier {{INSTANCE_ID}}
             --no-publicly-accessible
             --apply-immediately
 \`\`\`
@@ -4248,8 +4264,8 @@ az vmss update \\
 \`\`\`
         aws rds create-db-snapshot
         --region {{region}}
-        --db-snapshot-identifier {{recommendation.instance_id}}-snapshot
-        --db-instance-identifier {{recommendation.instance_id}}
+        --db-snapshot-identifier {{INSTANCE_ID}}-snapshot
+        --db-instance-identifier {{INSTANCE_ID}}
 \`\`\`
 `,
       ],
@@ -4287,7 +4303,7 @@ az vmss update \\
 \`\`\`
         aws rds modify-db-instance
             --region {{region}}
-            --db-instance-identifier {{recommendation.instance_id}}
+            --db-instance-identifier {{INSTANCE_ID}}
             --db-subnet-group-name cc-private-db-subnet-group
             --apply-immediately
 \`\`\`
@@ -4318,7 +4334,7 @@ az vmss update \\
 \`\`\`
             aws rds copy-db-snapshot
             --region {{region}}
-            --source-db-snapshot-identifier {{recommendation.instance_id}}-snapshot
+            --source-db-snapshot-identifier {{INSTANCE_ID}}-snapshot
             --target-db-snapshot-identifier cc-encrypted-project5-mysql-database-feb-2021
             --kms-key-id arn:aws:kms:<aws-region>:<aws-account-id>:alias/aws/rds
 \`\`\`
@@ -6382,7 +6398,7 @@ az vmss create \\
       mitigations: [
         `**AWS CLI command to upgrade RDS instance generation:**
 \`\`\`
-        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --db-instance-class db.t3.medium --apply-immediately
+        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --db-instance-class db.t3.medium --apply-immediately
 \`\`\`
 `,
       ],
@@ -6672,7 +6688,7 @@ gcloud compute instances start {{instance_name}} \\
       mitigations: [
         `**AWS CLI command to upgrade RDS instance generation:**
 \`\`\`
-        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --db-instance-class db.t3.medium --apply-immediately
+        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --db-instance-class db.t3.medium --apply-immediately
 \`\`\`
 `,
       ],
@@ -6692,7 +6708,7 @@ gcloud compute instances start {{instance_name}} \\
       mitigations: [
         `**AWS CLI command to upgrade RDS instance generation:**
 \`\`\`
-  aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --db-instance-class db.t3.medium --apply-immediately
+  aws rds modify-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --db-instance-class db.t3.medium --apply-immediately
 \`\`\`
 `,
       ],
@@ -6712,7 +6728,7 @@ gcloud compute instances start {{instance_name}} \\
       mitigations: [
         `**AWS CLI command to upgrade RDS instance generation:**
 \`\`\`
-        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --db-instance-class db.t3.medium --apply-immediately
+        aws rds modify-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --db-instance-class db.t3.medium --apply-immediately
 \`\`\`
         `,
       ],
@@ -6765,7 +6781,7 @@ gcloud compute instances start {{instance_name}} \\
       mitigations: [
         `**AWS CLI command to scale up RDS instance storage space:**
 \`\`\`
-    aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --allocated-storage 100 --apply-immediately
+    aws rds modify-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --allocated-storage 100 --apply-immediately
 \`\`\`
         `,
       ],
@@ -6795,7 +6811,7 @@ ReadIOPS and WriteIOPS - the average number of disk I/O (Input/Output) operation
       mitigations: [
         `Delete the identified idle Amazon RDS database instances to reduce your monthly AWS costs. Before you delete an RDS instance, ensure that you have backed up the database to avoid losing any important data. To delete an RDS instance, use the AWS Management Console, AWS CLI or AWS SDKs.
 \`\`\`
-aws rds delete-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --no-skip-final-snapshot --final-db-snapshot-identifier {{recommendation.instance_id}}-final-snapshot
+aws rds delete-db-instance --region {{region}} --db-instance-identifier {{INSTANCE_ID}} --no-skip-final-snapshot --final-db-snapshot-identifier {{INSTANCE_ID}}-final-snapshot
 \`\`\`
  `,
       ],
@@ -6817,12 +6833,12 @@ aws rds delete-db-instance --region {{region}} --db-instance-identifier {{recomm
         `**AWS CLI command to stop or terminate idle EC2 instance:**
         - Stop Instance
 \`\`\`
-        aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+        aws ec2 stop-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 
         - Terminate Instance
 \`\`\`
-        aws ec2 terminate-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+        aws ec2 terminate-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
         
         `,
@@ -6888,17 +6904,17 @@ aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.inst
 
         - Stop instance
 \`\`\`
-aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+aws ec2 stop-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 
         - Modify Instance Type
 \`\`\`
-aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type Value={{recommendation.recommended_instance_type}}
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{INSTANCE_ID}} --instance-type {"Value": "{{INSTANCE_TYPE}}"}
 \`\`\`
 
         - Start Instance
 \`\`\`
-aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+aws ec2 start-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 `,
       ],
@@ -6918,17 +6934,17 @@ aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.inst
 
         - Stop instance
 \`\`\`
-aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+aws ec2 stop-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 
         - Modify Instance Type
 \`\`\`
-aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type Value={{recommendation.recommended_instance_type}}
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{INSTANCE_ID}} --instance-type {"Value": "{{INSTANCE_TYPE}}"}
 \`\`\`
 
         - Start Instance
 \`\`\`
-aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+aws ec2 start-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
         `,
       ],
@@ -7455,9 +7471,9 @@ aws cloudwatch get-metric-statistics \\
       mitigations: [
         `Stop the instance, change its type, and restart:
 \`\`\`
-aws ec2 stop-instances --instance-ids {{recommendation.instance_id}}
-aws ec2 modify-instance-attribute --instance-id {{recommendation.instance_id}} --instance-type '{"Value":"{{recommendation.recommended_instance_type}}"}'
-aws ec2 start-instances --instance-ids {{recommendation.instance_id}}
+aws ec2 stop-instances --instance-ids {{INSTANCE_ID}}
+aws ec2 modify-instance-attribute --instance-id {{INSTANCE_ID}} --instance-type '{"Value":"{{INSTANCE_TYPE}}"}'
+aws ec2 start-instances --instance-ids {{INSTANCE_ID}}
 \`\`\`
 `,
       ],

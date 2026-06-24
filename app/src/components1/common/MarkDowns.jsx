@@ -205,7 +205,7 @@ const defaultStyles = {
   '& pre': {
     backgroundColor: 'var(--ds-brand-500)',
     color: 'var(--ds-brand-150) !important',
-    padding: 'var(--ds-space-3) var(--ds-space-4) !important',
+    padding: `var(--ds-space-3) ${ds.space.mul(1, 16)} var(--ds-space-3) var(--ds-space-4) !important`,
     borderRadius: 'var(--ds-radius-lg)',
     marginBottom: 'var(--ds-space-4)',
     whiteSpace: 'pre-wrap',
