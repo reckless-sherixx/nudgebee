@@ -86,6 +86,7 @@ function buildAzureAdvisorMitigation(recommendation: Record<string, any>): strin
 const TEMPLATE_ALIASES: Record<string, string[]> = {
   INSTANCE_ID: ['recommendation.instance_id', 'recommendation.cpu.resource_id', 'resource_name'],
   INSTANCE_TYPE: ['recommendation.recommended_instance_type', 'recommendation.recommendedInstances.0.instanceType'],
+  REPOSITORY_NAME: ['repository_name', 'recommendation.repository_name'],
 };
 
 export function interpolateMitigations(mitigations: string[] | undefined, recommendation: Record<string, any> | undefined): string[] | undefined {
@@ -246,7 +247,7 @@ aws ec2 modify-instance-attribute
       mitigations: [
         `AWS CLI command to set image tag mutability to IMMUTABLE:
 \`\`\`
-aws ecr put-image-tag-mutability --repository-name name --image-tag-mutability IMMUTABLE --region us-east-2
+aws ecr put-image-tag-mutability --repository-name {{REPOSITORY_NAME}} --image-tag-mutability IMMUTABLE --region {{region}}
 \`\`\`
 `,
         `**Terraform configuration file (.tf):**
@@ -1480,7 +1481,7 @@ aws guardduty update-detector --detector-id <id> --enable
       mitigations: [
         `
 \`\`\`
-aws ec2 modify-instance-attribute --instance-id i-xxx --disable-api-termination
+aws ec2 modify-instance-attribute --instance-id {{INSTANCE_ID}} --disable-api-termination
 \`\`\`
 `,
       ],
@@ -1494,7 +1495,7 @@ aws ec2 modify-instance-attribute --instance-id i-xxx --disable-api-termination
       mitigations: [
         `
 \`\`\`
-aws ec2 modify-instance-attribute --instance-id i-xxx --instance-initiated-shutdown-behavior stop
+aws ec2 modify-instance-attribute --instance-id {{INSTANCE_ID}} --instance-initiated-shutdown-behavior stop
 \`\`\`
 `,
       ],
@@ -1508,7 +1509,7 @@ aws ec2 modify-instance-attribute --instance-id i-xxx --instance-initiated-shutd
       mitigations: [
         `
 \`\`\`
-aws ec2 monitor-instances --instance-ids i-xxx
+aws ec2 monitor-instances --instance-ids {{INSTANCE_ID}}
 \`\`\`
 `,
       ],
@@ -1665,7 +1666,11 @@ aws cloudformation update-termination-protection --enable-termination-protection
       serviceName: 'AWSCloudFormation',
       recommendations: ['Set a stack policy to protect critical resources from unintentional updates.'],
       mitigations: [
-        'Set a stack policy: `aws cloudformation set-stack-policy --stack-name {{resource_name}} --stack-policy-body file://policy.json`',
+        `Set a stack policy: 
+\`\`\`
+aws cloudformation set-stack-policy --stack-name {{resource_name}} --stack-policy-body file://policy.json
+\`\`\`
+`,
       ],
       references: ['https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/protect-stack-resources.html'],
     },
@@ -1842,7 +1847,11 @@ aws logs put-retention-policy --log-group-name {{recommendation.log_group_name}}
       serviceName: 'AmazonECS',
       recommendations: ['Enable Container Insights for better visibility into ECS performance.'],
       mitigations: [
-        'Update the cluster setting: `aws ecs update-cluster-settings --cluster {{recommendation.cluster_name}} --settings name=containerInsights,value=enabled`',
+        `Update the cluster setting:
+\`\`\`
+        aws ecs update-cluster-settings --cluster {{recommendation.cluster_name}} --settings name=containerInsights,value=enabled
+\`\`\`
+`,
       ],
       references: ['https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cloudwatch-container-insights.html'],
     },
@@ -2130,7 +2139,7 @@ aws configservice start-configuration-recorder --configuration-recorder-name def
         `
 **Run a patch operation:**
 \`\`\`
-aws ssm send-command --document-name AWS-RunPatchBaseline --targets Key=instanceids,Values=i-xxx
+aws ssm send-command --document-name AWS-RunPatchBaseline --targets Key=instanceids,Values={{INSTANCE_ID}}
 \`\`\`
 `,
       ],
@@ -2153,7 +2162,7 @@ aws ssm send-command --document-name AWS-RunPatchBaseline --targets Key=instance
         `
 **Update via SSM:**
 \`\`\`
-aws ssm send-command --document-name AWS-UpdateSSMAgent --targets Key=instanceids,Values=i-xxx
+aws ssm send-command --document-name AWS-UpdateSSMAgent --targets Key=instanceids,Values={{INSTANCE_ID}}
 \`\`\`
 `,
       ],
@@ -2836,14 +2845,14 @@ az resource tag --tags key=value --ids RESOURCE_ID
         `Update the ECR Public repository to enable image tag immutability:
 \`\`\`
 aws ecr-public put-repository-catalog-data \\
-  --repository-name {{repository_name}} \\
+  --repository-name {{REPOSITORY_NAME}} \\
   --region us-east-1
 \`\`\`
 
 Alternatively, recreate the repository with immutable tags enabled:
 \`\`\`
 aws ecr-public create-repository \\
-  --repository-name {{repository_name}} \\
+  --repository-name {{REPOSITORY_NAME}} \\
   --catalog-data '{}' \\
   --tags Key=Environment,Value=Production
 \`\`\``,
@@ -4475,7 +4484,7 @@ aws redshift modify-cluster --cluster-identifier {{recommendation.cluster_id}} -
       mitigations: [
         `
 \`\`\`
-aws ec2 modify-instance-metadata-options --instance-id i-xxx --http-tokens required
+aws ec2 modify-instance-metadata-options --instance-id {{INSTANCE_ID}} --http-tokens required
 \`\`\`
 `,
       ],
