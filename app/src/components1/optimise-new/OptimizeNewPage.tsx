@@ -1220,8 +1220,8 @@ const OptimizeNewPage = () => {
           handleClose={() => setTicketModalRec(null)}
           onClose={() => setTicketModalRec(null)}
           onSuccess={() => {
+            // TicketCreatePopupForm already shows the success toast (with the ticket link); don't fire a second one here.
             setTicketModalRec(null);
-            snackbar.success('Ticket created successfully');
             fetchTableData();
           }}
           onFailure={(error: string) => {
@@ -1249,9 +1249,10 @@ const OptimizeNewPage = () => {
           onClose={() => setResolveModalRec(null)}
           recommendation={resolveModalRec}
           clusterName={accounts[resolveModalRec.account_id]?.name}
+          // ResolveModal fires its own action-specific toast (deploy fix / auto-optimize rule); close and refresh the list to reflect the new status.
           onSuccess={() => {
             setResolveModalRec(null);
-            snackbar.success('Recommendation applied successfully');
+            fetchTableData();
           }}
         />
       )}

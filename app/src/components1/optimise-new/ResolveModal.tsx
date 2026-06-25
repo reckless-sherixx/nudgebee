@@ -773,10 +773,8 @@ const ResolveModal = ({ open, onClose, recommendation, clusterName, onSuccess }:
         open={isTicketFormOpen}
         handleClose={() => setIsTicketFormOpen(false)}
         onClose={() => setIsTicketFormOpen(false)}
-        onSuccess={() => {
-          setIsTicketFormOpen(false);
-          snackbar.success('Ticket created successfully');
-        }}
+        // TicketCreatePopupForm already shows the success toast (with the ticket link); only close here.
+        onSuccess={() => setIsTicketFormOpen(false)}
         onFailure={(error: string) => {
           snackbar.error(error || 'Failed to create ticket');
         }}
