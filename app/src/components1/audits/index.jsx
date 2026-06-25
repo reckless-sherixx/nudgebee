@@ -55,6 +55,12 @@ const formatStateForDiff = (state) => {
   return state;
 };
 
+// Account-level audit rows are still stored under the legacy 'TENANTS' category
+// (backend audit.EventCategoryTenant). The product terminology is now
+// "Account", so normalize the category for display only — the stored value is
+// left untouched so historical rows stay filterable.
+const normalizeAuditCategory = (category) => ((category || '').toUpperCase() === 'TENANTS' ? 'ACCOUNTS' : category);
+
 const DiffTab = (option, query, _row) => {
   const currentStateString = formatStateForDiff(query.data.event_state);
   const prevStateString = formatStateForDiff(query.data.event_prev_state);
@@ -204,7 +210,7 @@ export const AuditsTable = () => {
     }
     if (item.event_type == 'TENANT_USER_CREATE') {
       let userName = usersMap[data.user] || data.user;
-      return <Text value={`User ${userName} Assigned To Tenant`} showAutoEllipsis />;
+      return <Text value={`User ${userName} Assigned To Account`} showAutoEllipsis />;
     } else if (item.event_type == 'RECOMMENDATION_APPLY') {
       return <Text value={`Recommendation Resolution Applied`} showAutoEllipsis />;
     } else if (item.event_type == 'K8SRELAY_TASK_CREATE') {
@@ -241,7 +247,7 @@ export const AuditsTable = () => {
       return <Text value={`New Integration ${integrationName ? `With Name ${integrationName} ` : ''}Created`} showAutoEllipsis />;
     }
     const name = data.name || data.account_name || data.job_name || data.title || data.action_name || '';
-    const value = `New ${capitalize(item.event_category)} ${name ? `With Name ${name} ` : ''} Created`;
+    const value = `New ${capitalize(normalizeAuditCategory(item.event_category))} ${name ? `With Name ${name} ` : ''} Created`;
     return <Text value={value} showAutoEllipsis />;
   }
 
@@ -303,7 +309,12 @@ export const AuditsTable = () => {
       return <Text value={`Integration ${data.name ? `With Name ${data.name} ` : ''}Updated`} showAutoEllipsis />;
     }
     const updateName = data.name || data.account_name || data.job_name || data.action_name || '';
-    return <Text value={`${snakeToTitleCase(item.event_category)} ${updateName ? `With Name ${updateName} ` : ''}Updated`} showAutoEllipsis />;
+    return (
+      <Text
+        value={`${snakeToTitleCase(normalizeAuditCategory(item.event_category))} ${updateName ? `With Name ${updateName} ` : ''}Updated`}
+        showAutoEllipsis
+      />
+    );
   }
 
   function getSummaryMessageForDelete(item) {
@@ -344,7 +355,7 @@ export const AuditsTable = () => {
       }
       return <Text value={`Integration ${integrationName ? `With Name ${integrationName} ` : ''}Deleted`} showAutoEllipsis />;
     }
-    const value = `${capitalize(item.event_category)} ${name ? `With Name ${name} ` : ''} Deleted`;
+    const value = `${capitalize(normalizeAuditCategory(item.event_category))} ${name ? `With Name ${name} ` : ''} Deleted`;
     return <Text value={value} showAutoEllipsis />;
   }
 
@@ -438,7 +449,11 @@ export const AuditsTable = () => {
                   component: (
                     <Text
                       showAutoEllipsis
-                      value={capitalize((item.event_category || '').replaceAll('_', ' ')) + '/' + snakeToTitleCase(item.event_type || '')}
+                      value={
+                        capitalize((normalizeAuditCategory(item.event_category) || '').replaceAll('_', ' ')) +
+                        '/' +
+                        snakeToTitleCase(item.event_type || '')
+                      }
                     />
                   ),
                 },
