@@ -1,17 +1,17 @@
 import { test } from "@playwright/test";
-import { WorkflowLocators } from "../workflowlocators";
+import { WorkflowLocators } from "../../workflowlocators";
 import {
   generateWorkflowName,
   loginAndNavigateToNewWorkflow,
   pasteAndApplyWorkflowJson,
   saveNewWorkflow,
-  setWorkflowActiveAndSave,
   runWorkflowWithGraphQLValidation,
-  selectCluster,
-  selectIntegration,
+  deleteCreatedWorkflow,
+  selectTicketIntegration,
+  selectProjectKey,
   closeActionPanel,
   dryRunAction,
-} from "../workflowHelper";
+} from "../../workflowHelper";
 
 const WORKFLOW_JSON_TEMPLATE = {
   definition: {
@@ -21,14 +21,11 @@ const WORKFLOW_JSON_TEMPLATE = {
     output: {},
     tasks: [
       {
-        id: "tickets_update",
-        type: "tickets.update",
+        id: "tickets_get_comments",
+        type: "tickets.get_comments",
         params: {
-          description: "Hey this is for the workflow testing only.",
-          labels: ["Lorem", "runbook"],
-          project_key: process.env.JIRA_PROJECT_KEY ?? "",
-          severity: "High",
-          ticket_id: process.env.JIRA_TICKET_ID ?? "",
+          project_key: process.env.GITHUB_PROJECT_KEY ?? "",
+          ticket_id: process.env.GITHUB_TICKET_ID ?? "",
         },
       },
     ],
@@ -44,22 +41,26 @@ const WORKFLOW_JSON_TEMPLATE = {
   status: "ACTIVE",
 };
 
-test("Automation workflow Ticket Update", async ({ page }) => {
+test("Automation workflow Get Comment", async ({ page }) => {
   test.setTimeout(120000);
 
   const locators = new WorkflowLocators(page);
-  const workflowName = generateWorkflowName("Ticket Update");
+  const workflowName = generateWorkflowName("Get Comment");
   const workflowJson = { name: workflowName, ...WORKFLOW_JSON_TEMPLATE };
 
   await loginAndNavigateToNewWorkflow(page, locators);
   await pasteAndApplyWorkflowJson(page, locators, workflowJson);
-  await locators.action_tickets_update.click();
-  await selectCluster(page, locators, process.env.CLUSTER ?? "");
-  await selectIntegration(page, locators, process.env.JIRA_NAME ?? "");
+  await locators.action_tickets_get_comments.click();
+  await locators.dialog.waitFor({ state: "visible", timeout: 15000 });
+
+  await selectTicketIntegration(locators, process.env.GITHUB_NAME ?? "");
+  await selectProjectKey(page, locators, process.env.GITHUB_PROJECT_KEY ?? "");
+
   await dryRunAction(page, locators);
   await closeActionPanel(page, locators);
 
   await saveNewWorkflow(page, locators, workflowName);
-  await setWorkflowActiveAndSave(page, locators);
-  await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Ticket Update");
+  await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Get Comment Github");
+
+  await deleteCreatedWorkflow(page, locators, workflowName);
 });

@@ -1,15 +1,17 @@
 import { test } from "@playwright/test";
-import { WorkflowLocators } from "../workflowlocators";
+import { WorkflowLocators } from "../../workflowlocators";
 import {
   generateWorkflowName,
   loginAndNavigateToNewWorkflow,
   pasteAndApplyWorkflowJson,
   saveNewWorkflow,
-  setWorkflowActiveAndSave,
   runWorkflowWithGraphQLValidation,
+  deleteCreatedWorkflow,
+  selectTicketIntegration,
+  selectProjectKey,
   closeActionPanel,
   dryRunAction,
-} from "../workflowHelper";
+} from "../../workflowHelper";
 
 const WORKFLOW_JSON_TEMPLATE = {
   definition: {
@@ -19,9 +21,10 @@ const WORKFLOW_JSON_TEMPLATE = {
     output: {},
     tasks: [
       {
-        id: "tickets_get_comments",
-        type: "tickets.get_comments",
+        id: "tickets_assign",
+        type: "tickets.assign",
         params: {
+          assignee: process.env.GITHUB_ASSIGNEE ?? "",
           project_key: process.env.GITHUB_PROJECT_KEY ?? "",
           ticket_id: process.env.GITHUB_TICKET_ID ?? "",
         },
@@ -39,31 +42,32 @@ const WORKFLOW_JSON_TEMPLATE = {
   status: "ACTIVE",
 };
 
-test("Automation workflow Get Comment", async ({ page }) => {
+test("Automation workflow Github Ticket Assign", async ({ page }) => {
   test.setTimeout(120000);
 
   const locators = new WorkflowLocators(page);
-  const workflowName = generateWorkflowName("Get Comment");
+  const workflowName = generateWorkflowName("Ticket Assign");
   const workflowJson = { name: workflowName, ...WORKFLOW_JSON_TEMPLATE };
 
   await loginAndNavigateToNewWorkflow(page, locators);
   await pasteAndApplyWorkflowJson(page, locators, workflowJson);
-  await locators.action_tickets_get_comments.click();
+  await locators.action_tickets_assign.click();
+  await locators.dialog.waitFor({ state: "visible", timeout: 15000 });
 
-  await page.locator("div.MuiDialog-container").waitFor({ state: "visible", timeout: 15000 });
+  await selectTicketIntegration(locators, process.env.GITHUB_NAME ?? "");
+  await selectProjectKey(page, locators, process.env.GITHUB_PROJECT_KEY ?? "");
 
-  const githubName = process.env.GITHUB_NAME ?? "";
-  const integrationBtn = page.locator("div.MuiDialog-container")
-    .getByRole("button", { name: /Ticket integration/i });
-  await integrationBtn.waitFor({ state: "visible", timeout: 15000 });
-  await integrationBtn.click();
-  await page.locator("div.MuiDialog-container").getByText(githubName, { exact: true }).click();
-  console.log(`Selected GitHub integration: ${githubName}`);
+  const assignee = process.env.GITHUB_ASSIGNEE ?? "";
+  const assigneeInput = locators.dialog.getByRole("combobox", { name: /assignee/i });
+  await assigneeInput.fill(assignee);
+  await assigneeInput.press("Enter");
+  console.log(`Filled assignee: ${assignee}`);
 
   await dryRunAction(page, locators);
   await closeActionPanel(page, locators);
 
   await saveNewWorkflow(page, locators, workflowName);
-  await setWorkflowActiveAndSave(page, locators);
-  await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Get Comment Github");
+  await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Github Ticket Assign");
+
+  await deleteCreatedWorkflow(page, locators, workflowName);
 });

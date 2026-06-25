@@ -1,15 +1,15 @@
 import { test } from "@playwright/test";
-import { WorkflowLocators } from "../workflowlocators";
+import { WorkflowLocators } from "../../workflowlocators";
 import {
   generateWorkflowName,
   loginAndNavigateToNewWorkflow,
   pasteAndApplyWorkflowJson,
   saveNewWorkflow,
-  setWorkflowActiveAndSave,
   runWorkflowWithGraphQLValidation,
+  deleteCreatedWorkflow,
   closeActionPanel,
   dryRunAction,
-} from "../workflowHelper";
+} from "../../workflowHelper";
 
 const WORKFLOW_JSON_TEMPLATE = {
   definition: {
@@ -50,37 +50,30 @@ test("Automation workflow Add Comment", async ({ page }) => {
   await loginAndNavigateToNewWorkflow(page, locators);
   await pasteAndApplyWorkflowJson(page, locators, workflowJson);
 
-  await page.getByRole("button", { name: /Tickets Add Comment/i }).click();
+  await locators.action_tickets_add_comment.click();
   await locators.dialog.waitFor({ state: "visible", timeout: 15000 });
 
-  const clusterName = process.env.CLUSTER ?? "";
-  await locators.account_id_input.waitFor({ state: "visible", timeout: 10000 });
-  await locators.account_id_input.click();
-  await locators.account_id_input.fill(clusterName);
-  await page.getByRole("option", { name: clusterName }).click();
-  console.log(`Selected Account Id: ${clusterName}`);
-
   const githubName = process.env.GITHUB_NAME ?? "";
-  await locators.integrationIdDropdown.waitFor({ state: "visible", timeout: 10000 });
-  await locators.integrationIdDropdown.click();
-  await page.waitForTimeout(300);
-  await page.keyboard.type(githubName);
-  await page.waitForTimeout(300);
-  await page.locator('[role="option"]').filter({ hasText: githubName }).first().click();
-  console.log(`Selected Integration: ${githubName}`);
+  const integrationBtn = locators.dialog.getByRole("button", { name: /Ticket integration/i });
+  await integrationBtn.waitFor({ state: "visible", timeout: 15000 });
+  await integrationBtn.click();
+  await locators.dialog.getByText(githubName, { exact: true }).click();
+  console.log(`Selected GitHub integration: ${githubName}`);
 
-  await locators.projectKeyDropdown.waitFor({ state: "visible", timeout: 10000 });
+  const projectKey = process.env.GITHUB_PROJECT_KEY ?? "";
+  await locators.projectKeyDropdown.waitFor({ state: "visible", timeout: 15000 });
   await locators.projectKeyDropdown.click();
+  await page.waitForTimeout(700);
+  await page.keyboard.type(projectKey);
   await page.waitForTimeout(300);
-  await page.keyboard.type(process.env.GITHUB_PROJECT_KEY ?? "");
-  await page.waitForTimeout(300);
-  await page.locator('[role="option"]').filter({ hasText: process.env.GITHUB_PROJECT_KEY ?? "" }).first().click();
-  console.log(`Selected Project Key: ${process.env.GITHUB_PROJECT_KEY}`);
+  await page.locator('[role="option"]').filter({ hasText: projectKey }).first().click();
+  console.log(`Selected Project Key: ${projectKey}`);
 
   await dryRunAction(page, locators);
   await closeActionPanel(page, locators);
 
   await saveNewWorkflow(page, locators, workflowName);
-  await setWorkflowActiveAndSave(page, locators);
   await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Add Comment GitHub");
+
+  await deleteCreatedWorkflow(page, locators, workflowName);
 });
