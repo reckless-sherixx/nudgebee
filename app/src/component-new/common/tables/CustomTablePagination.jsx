@@ -155,6 +155,7 @@ const CustomTablePagination = ({ page = 1, totalPages = 1, totalRows = 1, rowsPe
                 options={rowsPerPageOptions.map((n) => String(n))}
                 size='sm'
                 minWidth='0'
+                disablePortal={false}
               />
             </Box>
           </>
