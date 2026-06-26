@@ -2,6 +2,37 @@ import type { NextRouter } from 'next/router';
 import { v5 } from 'uuid';
 
 /**
+ * Returns the most recent `updated_at` (raw value) across a set of recommendation
+ * rows — i.e. the real "last refreshed" time of the data, regardless of which
+ * backend generated it. Returns null when no row carries a usable timestamp.
+ *
+ * A full scan batch-stamps every open row with the same `updated_at`, so the max
+ * over the currently-loaded page equals the last refresh time. This replaces the
+ * `schedule_jobs.last_exec_time_sec` source, which is only written for
+ * scan_orchestrator scanners and is stale/missing for the ml-k8s-server and
+ * recommendation-service scanners (krr_scan, volume_analyzer, spot_scan,
+ * abandoned_workload_scan).
+ *
+ * The bare-timestamp → UTC normalization mirrors Datetime's parser so the
+ * returned value renders identically to the per-row `updated_at` table cells.
+ */
+export const latestUpdatedAt = (rows: Array<{ updated_at?: string | null }> | null | undefined): string | null => {
+  let best: string | null = null;
+  let bestMs = -Infinity;
+  for (const row of rows ?? []) {
+    const raw = row?.updated_at;
+    if (!raw) continue;
+    const normalized = /([Zz]|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : raw + 'Z';
+    const ms = new Date(normalized).getTime();
+    if (!Number.isNaN(ms) && ms > bestMs) {
+      bestMs = ms;
+      best = raw;
+    }
+  }
+  return best;
+};
+
+/**
  * Maps raw API priority / severity strings (HIGH, MEDIUM, FIRING, DEBUG, OK,
  * HIGHEST, …) to ds/SeverityIcon's fixed 5-level union. Unknown / lower-signal
  * values collapse to 'info'.

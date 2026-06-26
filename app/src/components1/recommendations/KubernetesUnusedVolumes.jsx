@@ -20,6 +20,7 @@ import CustomTicketLink from '@components1/common/CustomTicketLink';
 import { Link as CustomLink } from '@components1/ds/Link';
 import NubiChatSidebar from '@components1/common/NubiChatSidebar';
 import { buildNubiOptimizePrompt } from 'src/utils/nubiPromptBuilder';
+import { latestUpdatedAt } from 'src/utils/common';
 import { getNubiIconUrl, useTenantBranding } from '@hooks/useTenantBranding';
 import CustomTooltip from '@components1/ds/Tooltip';
 import SafeIcon from '@components1/common/SafeIcon';
@@ -57,6 +58,7 @@ const KubernetesUnusedVolumes = ({ isOptimisePage = false, resourceIds, groupNam
   const { assistantName } = useTenantBranding();
   const [kubernetesUnusedVolume, setKubernetesUnusedVolume] = useState([]);
   const [kubernetesUnusedVolumeCount, setKubernetesUnusedVolumeCount] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [totalRecommendationsCount, setTotalRecommendationsCount] = useState(0);
   const [kubernetesUnusedVolumeEstimatedSaving, setKubernetesUnusedVolumeEstimatedSaving] = useState(0);
   const [openKubernetesUnusedVolumeUpdatePopupForm, setOpenKubernetesUnusedVolumeUpdatePopupForm] = useState(false);
@@ -180,6 +182,7 @@ const KubernetesUnusedVolumes = ({ isOptimisePage = false, resourceIds, groupNam
       .then((res) => {
         setLoading(false);
         const rawItems = res?.data?.recommendation || [];
+        setLastRefreshed(latestUpdatedAt(rawItems));
         let k8sRecommendationData = rawItems.map((item) => {
           let data = [];
 
@@ -427,7 +430,7 @@ const KubernetesUnusedVolumes = ({ isOptimisePage = false, resourceIds, groupNam
           data-testid='uv-filter-toolbar'
           actions={
             <>
-              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='unused_pv' idPrefix='uv' />}
+              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='unused_pv' idPrefix='uv' lastRefreshed={lastRefreshed} />}
               <DsDropdownMenu
                 align='end'
                 size='sm'

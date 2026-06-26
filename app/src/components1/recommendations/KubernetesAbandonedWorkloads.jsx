@@ -11,7 +11,7 @@ import Datetime from '@common-new/format/Datetime';
 import { hasWriteAccess } from '@lib/auth';
 import PropTypes from 'prop-types';
 import KubernetesTracesListing from '@components1/k8s/details/KubernetesTracesListing';
-import { formatDateForPlusMinusDuration } from 'src/utils/common';
+import { formatDateForPlusMinusDuration, latestUpdatedAt } from 'src/utils/common';
 import { useData } from '@context/DataContext';
 import RecommendationResolution from '@components1/k8s/common/RecommendationResolution';
 import { useRouter } from 'next/router';
@@ -177,6 +177,7 @@ const KubernetesAbandonedWorkloads = ({ enabledSummary = true, enabledFilters = 
 
   const [kubernetesAbandonedWorkloads, setKubernetesAbandonedWorkloads] = useState([]);
   const [kubernetesAbandonedWorkloadsCount, setKubernetesAbandonedWorkloadsCount] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [estimatedSavings, setEstimatedSavings] = useState(0);
   const [isTicketCreateFormOpen, setIsTicketCreateFormOpen] = useState(false);
   const [ticketData, setTicketData] = useState({});
@@ -332,6 +333,7 @@ const KubernetesAbandonedWorkloads = ({ enabledSummary = true, enabledFilters = 
       })
       .then((res) => {
         setLoading(false);
+        setLastRefreshed(latestUpdatedAt(res?.data?.recommendation || []));
         let k8sRecommendationData = res?.data?.recommendation?.map((item) => {
           let data = [];
 
@@ -624,7 +626,9 @@ const KubernetesAbandonedWorkloads = ({ enabledSummary = true, enabledFilters = 
           data-testid='aw-filter-toolbar'
           actions={
             <>
-              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='abandoned_workload_scan' idPrefix='aw' />}
+              {!isOptimisePage && (
+                <ScanRefreshButton accountId={selectedAccountId} jobName='abandoned_workload_scan' idPrefix='aw' lastRefreshed={lastRefreshed} />
+              )}
               <DsDropdownMenu
                 align='end'
                 size='sm'

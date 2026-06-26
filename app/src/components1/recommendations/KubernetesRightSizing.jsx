@@ -41,7 +41,7 @@ import NubiChatSidebar from '@components1/common/NubiChatSidebar';
 import { buildNubiOptimizePrompt } from 'src/utils/nubiPromptBuilder';
 import { getNubiIconUrl, useTenantBranding } from '@hooks/useTenantBranding';
 import CustomTooltip from '@components1/ds/Tooltip';
-import { syncFilterFromQuery } from '@utils/common';
+import { syncFilterFromQuery, latestUpdatedAt } from '@utils/common';
 
 // DS V2 primitives — phased in alongside the legacy components. Visual swap only;
 // API calls, handlers, and modal forms (AutoOptimizeForm and friends) untouched.
@@ -78,6 +78,7 @@ const KubernetesRightSizing = ({ enabledSummary = true, enabledFilters = true, i
   const [rowsPerPage, setRowsPerPage] = useState(apiUser.getUserPreferencesTablePageSize());
   const [kubernetesRightSizing, setKubernetesRightSizing] = useState([]);
   const [kubernetesRightSizingCount, setKubernetesRightSizingCount] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [kubernetesRightSizingEstimatedSaving, setKubernetesRightSizingEstimatedSaving] = useState(0);
   const [openKubernetesRightSizingUpdateForm, setOpenKubernetesRightSizingUpdateForm] = useState(false);
   const [namespaceFilter, setNamespaceFilter] = useState([]);
@@ -558,6 +559,7 @@ const KubernetesRightSizing = ({ enabledSummary = true, enabledFilters = true, i
         resource_ids: resourceIds,
       })
       .then((res) => {
+        setLastRefreshed(latestUpdatedAt(res?.data?.recommendation || []));
         let k8sRecommendationData = res?.data?.recommendation?.map((item) => {
           const data = [];
           let hasAutopilotConfigured = false;
@@ -1903,7 +1905,7 @@ const KubernetesRightSizing = ({ enabledSummary = true, enabledFilters = true, i
           data-testid='rs-filter-toolbar'
           actions={
             <>
-              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='krr_scan' idPrefix='rs' />}
+              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='krr_scan' idPrefix='rs' lastRefreshed={lastRefreshed} />}
               {selectedAccountId && (
                 <DsDropdownMenu
                   align='end'

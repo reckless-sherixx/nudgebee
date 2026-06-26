@@ -28,6 +28,7 @@ import Link from 'next/link';
 import { DataNotAvailable } from '@assets';
 import NubiChatSidebar from '@components1/common/NubiChatSidebar';
 import { buildNubiOptimizePrompt } from 'src/utils/nubiPromptBuilder';
+import { latestUpdatedAt } from 'src/utils/common';
 import { getNubiIconUrl, useTenantBranding } from '@hooks/useTenantBranding';
 import CustomTooltip from '@components1/ds/Tooltip';
 import SafeIcon from '@components1/common/SafeIcon';
@@ -199,6 +200,7 @@ const KubernetesPVCRightSizing = ({ enabledSummary = true, enabledFilters = true
 
   const [kubernetesAbandonedWorkloads, setKubernetesAbandonedWorkloads] = useState([]);
   const [kubernetesAbandonedWorkloadsCount, setKubernetesAbandonedWorkloadsCount] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [totalRecommendationsCount, setTotalRecommendationsCount] = useState(0);
   const [totalEstimatedSavings, setTotalEstimatedSavings] = useState(0);
   const [isTicketCreateFormOpen, setIsTicketCreateFormOpen] = useState(false);
@@ -273,6 +275,7 @@ const KubernetesPVCRightSizing = ({ enabledSummary = true, enabledFilters = true
       .then((res) => {
         setLoading(false);
         const rawItems = res?.data?.recommendation || [];
+        setLastRefreshed(latestUpdatedAt(rawItems));
         setKubernetesAbandonedWorkloadsCount(res?.data?.recommendation_aggregate?.aggregate?.count || 0);
         let k8sRecommendationData = rawItems.map((item) => {
           let data = [];
@@ -591,7 +594,9 @@ const KubernetesPVCRightSizing = ({ enabledSummary = true, enabledFilters = true
           data-testid='pvc-rs-filter-toolbar'
           actions={
             <>
-              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='volume_analyzer' idPrefix='pvc' />}
+              {!isOptimisePage && (
+                <ScanRefreshButton accountId={selectedAccountId} jobName='volume_analyzer' idPrefix='pvc' lastRefreshed={lastRefreshed} />
+              )}
               <DsDropdownMenu
                 align='end'
                 size='sm'

@@ -60,6 +60,7 @@ jest.mock('src/utils/actionStyles', () => ({
 
 jest.mock('src/utils/common', () => ({
   snakeToTitleCase: (s) => s,
+  latestUpdatedAt: (rows) => rows?.[0]?.updated_at ?? null,
 }));
 
 jest.mock('src/utils/nubiPromptBuilder', () => ({

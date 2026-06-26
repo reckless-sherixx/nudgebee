@@ -12,7 +12,7 @@ import Text from '@common-new/format/Text';
 import CustomTicketLink from '@components1/common/CustomTicketLink';
 import { colors, ds } from 'src/utils/colors';
 import { toast as snackbar } from '@components1/ds/Toast';
-import { snakeToTitleCase } from 'src/utils/common';
+import { snakeToTitleCase, latestUpdatedAt } from 'src/utils/common';
 import NubiChatSidebar from '@components1/common/NubiChatSidebar';
 import { buildNubiOptimizePrompt } from 'src/utils/nubiPromptBuilder';
 import { getNubiIconUrl, useTenantBranding } from '@hooks/useTenantBranding';
@@ -61,6 +61,7 @@ const KubernetesBestPractices = ({ enabledSummary = true, enabledFilters = true,
   const { assistantName } = useTenantBranding();
   const [kubernetesBestPractice, setKubernetesBestPractice] = useState([]);
   const [kubernetesBestPracticeCount, setKubernetesBestPracticeCount] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [totalBestPracticeCount, setTotalBestPracticeCount] = useState(0);
   const [ruleName, setRuleName] = useState('');
   const [severity, setSeverity] = useState('');
@@ -228,6 +229,7 @@ const KubernetesBestPractices = ({ enabledSummary = true, enabledFilters = true,
         setLoading(false);
         setKubernetesBestPracticeCount(res?.data?.recommendation_aggregate?.aggregate?.count || 0);
         const rawItems = res?.data?.recommendation || [];
+        setLastRefreshed(latestUpdatedAt(rawItems));
         let k8sRecommendationData = rawItems.map((item) => {
           let data = [];
           let name = RULE_LABEL_MAP[item.rule_name] || snakeToTitleCase(item.rule_name);
@@ -462,7 +464,9 @@ const KubernetesBestPractices = ({ enabledSummary = true, enabledFilters = true,
           data-testid='bp-filter-toolbar'
           actions={
             <>
-              {!isOptimisePage && <ScanRefreshButton accountId={props?.kubernetes?.id} jobName='popeye_scan' idPrefix='bp' />}
+              {!isOptimisePage && (
+                <ScanRefreshButton accountId={props?.kubernetes?.id} jobName='popeye_scan' idPrefix='bp' lastRefreshed={lastRefreshed} />
+              )}
               <DsDropdownMenu
                 align='end'
                 size='sm'

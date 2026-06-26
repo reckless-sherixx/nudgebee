@@ -17,6 +17,7 @@ import { applyFiltersOnRouter } from '@lib/router';
 import apiUser from '@api1/user';
 import Text from '@common-new/format/Text';
 import { colors, ds } from 'src/utils/colors';
+import { latestUpdatedAt } from 'src/utils/common';
 import { Modal } from '@components1/ds/Modal';
 import CustomTicketLink from '@components1/common/CustomTicketLink';
 import { Link as CustomLink } from '@components1/ds/Link';
@@ -158,6 +159,7 @@ const KubernetesSpotRecommendation = ({ enabledSummary = true, enabledFilters = 
   const router = useRouter();
   const [kubernetesSpotRecommendation, setKubernetesSpotRecommendation] = useState([]);
   const [kubernetesSpotRecommendationCount, setKubernetesSpotRecommendationCount] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [totalSpotRecommendationCount, setTotalSpotRecommendationCount] = useState(0);
   const [totalSpotEstimatedSaving, setTotalSpotEstimatedSaving] = useState(0);
   const [isTicketCreateFormOpen, setIsTicketCreateFormOpen] = useState(false);
@@ -320,6 +322,7 @@ const KubernetesSpotRecommendation = ({ enabledSummary = true, enabledFilters = 
       .then((res) => {
         setLoading(false);
         setKubernetesSpotRecommendationCount(res?.data?.recommendation_aggregate?.aggregate?.count || 0);
+        setLastRefreshed(latestUpdatedAt(res?.data?.recommendation || []));
         let k8sRecommendationData = (res?.data?.recommendation || []).map((item) => {
           let data = [];
           data.push({
@@ -585,7 +588,9 @@ const KubernetesSpotRecommendation = ({ enabledSummary = true, enabledFilters = 
           data-testid='spot-filter-toolbar'
           actions={
             <>
-              {!isOptimisePage && <ScanRefreshButton accountId={selectedAccountId} jobName='spot_scan' idPrefix='spot' />}
+              {!isOptimisePage && (
+                <ScanRefreshButton accountId={selectedAccountId} jobName='spot_scan' idPrefix='spot' lastRefreshed={lastRefreshed} />
+              )}
               <DsDropdownMenu
                 align='end'
                 size='sm'
