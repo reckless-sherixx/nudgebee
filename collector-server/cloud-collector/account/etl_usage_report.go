@@ -353,6 +353,15 @@ func StoreUsage(ctx *security.RequestContext, accountId string, month time.Month
 		} else {
 			ctx.GetLogger().Error("usagereport: unable to fetch usage report", "error", err)
 		}
+		// A spend/billing fetch failure must NOT zero out the rest of the account.
+		// Resource discovery, recommendations, metrics, and event-rule sync run in
+		// the post-report job and do not depend on billing data — so publish it here
+		// the same way the no-billing-data path below does. Otherwise one misconfigured
+		// or unreadable billing export (wrong table, bad schema, revoked BigQuery
+		// access) silently blocks resource inventory, recommendations, and
+		// event-to-resource linkage for the whole account. The error is still
+		// returned so the agent-status defer records spends as disconnected.
+		shouldPublishPostReport = true
 		usageReportResponse = StoreUsageReportResponse{
 			Count:    0,
 			Duration: time.Since(t0),
