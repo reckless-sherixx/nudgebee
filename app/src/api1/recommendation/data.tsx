@@ -86,6 +86,7 @@ function buildAzureAdvisorMitigation(recommendation: Record<string, any>): strin
 const TEMPLATE_ALIASES: Record<string, string[]> = {
   INSTANCE_ID: ['recommendation.instance_id', 'recommendation.cpu.resource_id', 'resource_name'],
   INSTANCE_TYPE: ['recommendation.recommended_instance_type', 'recommendation.recommendedInstances.0.instanceType'],
+  ALTERNATE_INSTANCE_TYPE: ['recommendation.alternate_instances.0.instanceType'],
   REPOSITORY_NAME: ['repository_name', 'recommendation.repository_name'],
 };
 
@@ -6869,17 +6870,17 @@ aws rds delete-db-instance --region {{region}} --db-instance-identifier {{INSTAN
 
         - Stop instance
 \`\`\`
-aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+aws ec2 stop-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 
         - Modify Instance Type
 \`\`\`
-aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type Value={{recommendation.recommended_instance_type}}
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{INSTANCE_ID}} --instance-type '{"Value": "{{ALTERNATE_INSTANCE_TYPE}}"}'
 \`\`\`
 
         - Start Instance
 \`\`\`
-aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+aws ec2 start-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 \`\`\`
 
 `,
@@ -6918,7 +6919,7 @@ aws ec2 stop-instances --region {{region}} --instance-ids {{INSTANCE_ID}}
 
         - Modify Instance Type
 \`\`\`
-aws ec2 modify-instance-attribute --region {{region}} --instance-id {{INSTANCE_ID}} --instance-type {"Value": "{{INSTANCE_TYPE}}"}
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{INSTANCE_ID}} --instance-type '{"Value": "{{INSTANCE_TYPE}}"}'
 \`\`\`
 
         - Start Instance

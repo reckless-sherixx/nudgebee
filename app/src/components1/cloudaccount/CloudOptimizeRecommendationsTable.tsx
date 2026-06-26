@@ -4,6 +4,7 @@ import { buildNubiOptimizePrompt } from 'src/utils/nubiPromptBuilder';
 import { useRouter } from 'next/router';
 import { usePagination } from '@hooks/usePagination';
 import { interpolateMitigations, buildDescriptionMarkdown } from '@api1/recommendation/data';
+import { useEffectiveRecommendation } from '@hooks/useEffectiveRecommendation';
 import apiRecommendations, { RECOMMENDATION_STATUS } from '@api1/recommendation';
 import type { ICustomTable2Row } from './ec2/Instances';
 import ClusterNameWithRegion from '@components1/k8s/common/ClusterNameWithRegion';
@@ -15,6 +16,7 @@ import { ds } from 'src/utils/colors';
 import { ListingLayout } from '@components1/ds/ListingLayout';
 import CustomTable2 from '@common-new/tables/CustomTable2';
 import { Button as DsButton } from '@components1/ds/Button';
+import { Select as DsSelect } from '@components1/ds/Select';
 import DsTooltip from '@components1/ds/Tooltip';
 import { DropdownMenu as DsDropdownMenu } from '@components1/ds/DropdownMenu';
 import { SeverityIcon as DsSeverityIcon } from '@components1/ds/SeverityIcon';
@@ -966,7 +968,11 @@ function OptimizeMitigation({
   accountId?: string;
   recommendationId?: string;
 }) {
-  const mitigations = interpolateMitigations(drilldownQuery?.recommenedationDetails?.mitigations, drilldownQuery?.recommendation);
+  const { alternateOptions, selectedAlternateType, setSelectedAlternateType, effectiveRecommendation } = useEffectiveRecommendation(
+    drilldownQuery?.recommendation
+  );
+
+  const mitigations = interpolateMitigations(drilldownQuery?.recommenedationDetails?.mitigations, effectiveRecommendation);
   const markdowns = mitigations?.length ? mitigations.join('\n\n') : null;
   const [primaryAction, ...secondaryActions] = sideActions;
 
@@ -974,6 +980,18 @@ function OptimizeMitigation({
     <Box sx={{ background: ds.background[100], borderRadius: ds.radius.md, p: ds.space[2], display: 'flex', gap: ds.space[4] }}>
       {/* Left: mitigation content */}
       <Box sx={{ flex: 1, minWidth: 0 }}>
+        {alternateOptions.length > 0 && (
+          <Box sx={{ mb: ds.space[3], maxWidth: 300 }}>
+            <DsSelect
+              id='alternate-instance-type-selector'
+              label='Target Instance Type'
+              options={alternateOptions}
+              value={selectedAlternateType}
+              onChange={(v) => setSelectedAlternateType(v)}
+              clearable={false}
+            />
+          </Box>
+        )}
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 'var(--ds-space-2)' }}>
           <ApplyMitigationModal markdowns={markdowns} accountId={accountId} recommendationId={recommendationId} canExecute={canExecuteCommand} />
         </Box>

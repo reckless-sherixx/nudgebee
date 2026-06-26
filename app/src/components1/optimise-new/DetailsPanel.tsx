@@ -39,6 +39,8 @@ const DetailsPanel = ({ fullRecommendation: rec, accounts = {} }: DetailsPanelPr
     isActionableStatus &&
     ['aws', 'azure', 'gcp'].includes(cloudProvider.toLowerCase());
 
+  const { alternateOptions, selectedAlternateType, setSelectedAlternateType, effectiveRecommendation } = useEffectiveRecommendation(rec);
+
   useEffect(() => {
     if (!category || !ruleName) {
       setLoading(false);
@@ -60,9 +62,9 @@ const DetailsPanel = ({ fullRecommendation: rec, accounts = {} }: DetailsPanelPr
     );
   }
 
-  const mitigations = interpolateMitigations(details?.mitigations, rec);
-  const recData = safeParseJSON(rec.recommendation);
-  const fallback = extractFallbackContent(recData, rec);
+  const mitigations = interpolateMitigations(details?.mitigations, effectiveRecommendation);
+  const recData = effectiveRecommendation.recommendation;
+  const fallback = extractFallbackContent(recData, effectiveRecommendation);
 
   // Resolved values — catalog wins, fallback fills the gaps
   const title = details?.title || fallback.title || formatRuleName(ruleName);
@@ -143,6 +145,18 @@ const DetailsPanel = ({ fullRecommendation: rec, accounts = {} }: DetailsPanelPr
                 canExecute={canExecuteCommand}
               />
             </Box>
+            {alternateOptions.length > 0 && (
+              <Box sx={{ mb: ds.space[3], maxWidth: 360 }}>
+                <DsSelect
+                  id='details-alternate-instance-type-selector'
+                  label='Target Instance Type'
+                  options={alternateOptions}
+                  value={selectedAlternateType}
+                  onChange={(v) => setSelectedAlternateType(v)}
+                  clearable={false}
+                />
+              </Box>
+            )}
             <Box
               sx={{
                 p: '10px',
