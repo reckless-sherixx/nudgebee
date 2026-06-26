@@ -1556,6 +1556,7 @@ actions:
       timeout: 300
     permissions:
       - role: tenant_admin
+      - role: account_admin
     comment: Execute a CLI command on a cloud account and return the output
   - name: events_update_classification
     definition:

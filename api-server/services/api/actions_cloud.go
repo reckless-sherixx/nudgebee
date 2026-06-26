@@ -391,6 +391,18 @@ func handleCloudExecuteCommand(actionPayload *ActionRequest, c *gin.Context, ctx
 		return
 	}
 
+	// Gate on access to the target account. tenant_admin passes for any
+	// account in the tenant; account_admin only for its assigned accounts.
+	// Required because callers now include account_admin (actions.yaml).
+	if !ctx.GetSecurityContext().HasAccountAccess(request.AccountId, security.SecurityAccessTypeUpdate) {
+		c.JSON(403, []common.Error{
+			{
+				Message: "access denied for account: " + request.AccountId,
+			},
+		})
+		return
+	}
+
 	// Reject execution on read-only accounts (same guard as handleCloudApplyCommand).
 	{
 		databaseManager, dbErr := database.GetDatabaseManager(database.Metastore)
