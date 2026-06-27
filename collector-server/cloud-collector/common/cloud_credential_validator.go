@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,13 @@ const (
 	CloudProviderAzure CloudProvider = "Azure"
 	CloudProviderGCP   CloudProvider = "GCP"
 )
+
+// bigQueryIdentRe matches the safe subset of characters allowed in a BigQuery
+// project / dataset / table identifier — ASCII alphanumeric, underscore, or
+// hyphen, with an optional `$YYYYMMDD[HH]` partition suffix for table names.
+// Used to sanitize tenant-supplied identifiers before they are interpolated
+// into the dry-run query in checkGCPBigQueryBillingAccess.
+var bigQueryIdentRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\$[0-9]+)?$`)
 
 // PermissionType represents different permission categories
 type PermissionType string
@@ -480,6 +488,19 @@ func checkGCPBigQueryBillingAccess(ctx context.Context, creds GCPCredentials, st
 	// Dry-run a query against the table. This validates bigquery.jobs.create and
 	// bigquery.tables.getData (the permissions the spends sync actually needs)
 	// without scanning any data or incurring cost.
+	//
+	// Validate the three identifiers before interpolating them into the
+	// query string — they come from the tenant's onboarding payload, so a
+	// hostile shape could otherwise break out of the backtick-quoted
+	// reference and inject arbitrary BigQuery SQL. GCP project / dataset /
+	// table IDs are restricted to ASCII alphanumeric + '_' + '-' (table
+	// names may also carry a `$YYYYMMDD[HH]` partition decorator).
+	if !bigQueryIdentRe.MatchString(projectID) ||
+		!bigQueryIdentRe.MatchString(creds.BillingDatasetID) ||
+		!bigQueryIdentRe.MatchString(creds.BillingTableID) {
+		status.ErrorDetail = "BigQuery project / dataset / table identifier contains illegal characters; expected ASCII alphanumeric, '_' or '-' (table may have a '$YYYYMMDD' partition suffix)"
+		return false, true
+	}
 	query := client.Query(fmt.Sprintf("SELECT 1 FROM `%s.%s.%s` LIMIT 0", projectID, creds.BillingDatasetID, creds.BillingTableID))
 	query.DryRun = true
 	if _, err = query.Run(queryCtx); err != nil {
