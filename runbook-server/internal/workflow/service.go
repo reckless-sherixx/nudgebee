@@ -1223,19 +1223,33 @@ func (s *Service) RetriggerWorkflowExecution(ctx *security.RequestContext, accou
 		return "", fmt.Errorf("workflow %s is not active or paused", workflowId)
 	}
 
-	// 3b. Resolve the EXACT version that the original execution ran, and re-run
-	// that snapshot — not the current live/draft definition. Fail loudly rather
-	// than silently running a different version (which would defeat the point of
-	// a retry once the workflow has been edited).
-	if details.VersionID == nil || *details.VersionID == "" {
-		return "", common.ErrorBadRequest(fmt.Sprintf("execution %s predates version tracking; cannot retry exactly", executionId))
+	// 3b. Prefer the EXACT version the original execution ran, and re-run that
+	// snapshot — not the current live/draft definition. If the pinned version is
+	// unavailable (legacy run with no version Memo predating tracking, or a row
+	// pruned by the 50-version retention cap), fall back to the LIVE version
+	// rather than refusing the retry: exact replay is impossible there anyway, and
+	// live is the closest proxy. Mirrors the detail-display fallback above.
+	var memo map[string]any
+	if details.VersionID != nil && *details.VersionID != "" {
+		if pinnedVersion, verr := s.store.GetWorkflowVersionByID(ctx.GetContext(), *details.VersionID); verr == nil && pinnedVersion != nil {
+			// Run the pinned snapshot's definition everywhere downstream and stamp
+			// its identity so the new run is linked to the version that was retried.
+			wf.Definition = pinnedVersion.Definition
+			memo = model.WorkflowVersionMemo(pinnedVersion)
+		}
 	}
-	pinnedVersion, err := s.store.GetWorkflowVersionByID(ctx.GetContext(), *details.VersionID)
-	if err != nil || pinnedVersion == nil {
-		return "", common.ErrorBadRequest(fmt.Sprintf("workflow version %s is no longer available (pruned by retention); cannot retry execution %s exactly", *details.VersionID, executionId))
+	if memo == nil {
+		// Pinned version unavailable — run the live version and stamp its identity
+		// so the new run is still version-labeled (not unversioned).
+		ctx.GetLogger().Warn("retry: pinned version unavailable, falling back to live version",
+			"workflow_id", workflowId, "execution_id", executionId)
+		execDef, liveMemo, lerr := s.resolveLiveExecution(ctx.GetContext(), workflowId)
+		if lerr != nil {
+			return "", lerr
+		}
+		wf.Definition = execDef
+		memo = liveMemo
 	}
-	// Run the pinned snapshot's definition everywhere downstream.
-	wf.Definition = pinnedVersion.Definition
 
 	// 4. Merge inputs
 	mergedInputs := make(map[string]any)
@@ -1284,11 +1298,8 @@ func (s *Service) RetriggerWorkflowExecution(ctx *security.RequestContext, accou
 		}
 	}
 
-	// Stamp the pinned version's identity into Memo so the new run is linked to
-	// the same version that was retried (mirrors ExecuteWorkflow), keeping the
-	// execution-detail UI accurate.
-	memo := model.WorkflowVersionMemo(pinnedVersion)
-
+	// `memo` was resolved in step 3b (pinned version, or live-version fallback) and
+	// stamps the run's version identity so the execution-detail UI stays accurate.
 	options := client.StartWorkflowOptions{
 		ID:                       runWorkflowID,
 		TaskQueue:                config.Config.RunbookServerTemporalQueue,

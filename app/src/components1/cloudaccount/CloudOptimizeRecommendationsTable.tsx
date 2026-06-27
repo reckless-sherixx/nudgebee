@@ -270,8 +270,11 @@ const CloudOptimizeRecommendationsTable = (props: {
   const getMenuItems = (item: any) => {
     if (config.showAlarmModal) {
       const items: any[] = [];
-      // Only show "Create Alarm" for recommendations that have alarm_config and account is not read-only
-      if (item?.recommendation?.alarm_config && props.accountAccess !== 'readonly' && hasWriteAccess()) {
+      // Only show "Create Alarm" for recommendations that have alarm_config and account is not read-only.
+      // Pass the recommendation's account id: hasWriteAccess() with no arg short-circuits to true for
+      // tenant_admin but returns false for account-scoped admins (whose grant is per-account), which is
+      // why this action was wrongly disabled for Account Admin users.
+      if (item?.recommendation?.alarm_config && props.accountAccess !== 'readonly' && hasWriteAccess(item?.account_id ?? selectedAccountId)) {
         items.push({ icon: AutoPilotGreyIcon, disabled: false, label: 'Create Alarm', id: 0 });
       }
       items.push({ icon: TicketsIcon, disabled: false, label: 'Create Ticket', id: 1 });

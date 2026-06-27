@@ -50,9 +50,13 @@ const KubernetesLLMRequestResponse = (props) => {
           if (response.length == 1) {
             setSentFeedback({
               submitted: true,
-              isPositive: response[0].useful ?? null,
+              isPositive: response[0].useful === true,
               message: response[0].additional_notes ?? '',
             });
+          } else {
+            // No feedback for this response — clear any stale highlight a reused
+            // component instance may still be holding (issue #32906).
+            setSentFeedback({});
           }
         });
     }

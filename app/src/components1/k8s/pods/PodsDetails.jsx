@@ -179,9 +179,14 @@ const PodDetailsPage = ({ pod }) => {
               row={''}
               accountId={podData?.account}
               defaultQuery={{
-                subject_name: podData?.name,
+                // Pods are ephemeral — their names change on every restart/redeploy — so scoping by
+                // the exact pod name hides workload-level events and events from prior pod incarnations
+                // (issue #33003). Scope by the controller (workload) name + namespace instead, mirroring
+                // the Events view. subject_name does a prefix LIKE, so the workload name matches the
+                // workload's own events *and* every pod generation; subject_type is intentionally omitted
+                // so config-change / deployment-level events surface too.
+                subject_name: podData?.meta?.controller || podData?.name,
                 subject_namespace: podData?.meta?.namespace,
-                subject_type: 'pod',
               }}
               enableFilters={false}
             />

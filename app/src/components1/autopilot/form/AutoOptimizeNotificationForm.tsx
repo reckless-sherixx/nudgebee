@@ -1,5 +1,5 @@
 import { GChatIcon, ouMsTeams as MsTeamsIcon, slackIcon as SlackIcon } from '@assets';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import { Button as DsButton } from '@components1/ds/Button';
 import { Select } from '@components1/ds/Select';
@@ -59,24 +59,27 @@ const NotificationForm = ({
   isGoogleChannelsLoading,
   reviewAutoOptimize = false,
 }: NotificationFormProps) => {
-  const [messagingPlatforms, setMessagingPlatforms] = useState<string[]>([]);
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[] | null>(null);
 
   useEffect(() => {
     apiAccount
-      .listMessagingPlatform()
-      .then((res: any) => {
-        if (res?.data && res?.data.length > 0) {
-          setMessagingPlatforms(res?.data?.map((m: { platform: string }) => m.platform));
-        }
-      })
-      .catch((error) => {
-        console.error(error);
-      });
+      .listConnectedMessagingPlatforms()
+      .then((res) => setConnectedPlatforms(res?.data ?? []))
+      .catch(() => setConnectedPlatforms([]));
   }, []);
 
-  const slackDisabled = (messagingPlatforms && !messagingPlatforms.includes('slack')) || reviewAutoOptimize;
-  const teamsDisabled = (messagingPlatforms && !messagingPlatforms.includes('ms_teams')) || reviewAutoOptimize;
-  const googleChatDisabled = (messagingPlatforms && !messagingPlatforms.includes('google_chat')) || reviewAutoOptimize;
+  // A platform is selectable when it's installed — via the legacy messaging_platforms
+  // table or the new integrations storage, the same source the Integrations page reads.
+  // Until that resolves (null) we treat platforms as available to avoid a disabled flash.
+  const slackConnected = connectedPlatforms === null || connectedPlatforms.includes('slack');
+  const teamsConnected = connectedPlatforms === null || connectedPlatforms.includes('ms_teams');
+  const googleChatConnected = connectedPlatforms === null || connectedPlatforms.includes('google_chat');
+
+  // Keep a button enabled while its platform is selected so the user can always toggle
+  // it back off, even if the integration was disconnected after it was configured.
+  const slackDisabled = reviewAutoOptimize || (!slackConnected && !notificationData?.slack);
+  const teamsDisabled = reviewAutoOptimize || (!teamsConnected && !notificationData?.teams);
+  const googleChatDisabled = reviewAutoOptimize || (!googleChatConnected && !notificationData?.google_chat);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, mt: ds.space[4] }}>
@@ -102,6 +105,7 @@ const NotificationForm = ({
                 icon={<SafeIcon src={SlackIcon} width={18} height={18} />}
                 onClick={handleSlackButtonClick}
                 disabled={slackDisabled}
+                tooltip={slackDisabled && !reviewAutoOptimize ? 'Connect Slack in Integrations to enable notifications' : undefined}
               >
                 Slack
               </DsButton>
@@ -139,6 +143,7 @@ const NotificationForm = ({
                 icon={<SafeIcon src={MsTeamsIcon} width={18} height={18} />}
                 onClick={handleTeamsButtonClick}
                 disabled={teamsDisabled}
+                tooltip={teamsDisabled && !reviewAutoOptimize ? 'Connect MS Teams in Integrations to enable notifications' : undefined}
               >
                 MS Teams
               </DsButton>
@@ -192,6 +197,7 @@ const NotificationForm = ({
                 icon={<SafeIcon src={GChatIcon} width={18} height={18} />}
                 onClick={handleGoogleChatButtonClick}
                 disabled={googleChatDisabled}
+                tooltip={googleChatDisabled && !reviewAutoOptimize ? 'Connect Google Chat in Integrations to enable notifications' : undefined}
               >
                 Google Chat
               </DsButton>

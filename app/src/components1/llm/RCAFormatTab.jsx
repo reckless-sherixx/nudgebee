@@ -22,17 +22,25 @@ const RCAFormatTab = ({ accountId }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [format, setFormat] = useState('');
+  // Baseline of the last loaded/saved content; Save stays disabled until the user edits away from it.
+  const [savedFormat, setSavedFormat] = useState('');
+
+  const isDirty = format !== savedFormat;
 
   const fetchRCAFormat = React.useCallback(async () => {
     setLoading(true);
+    // Clear any previous account's content first so a failed load can't leave stale data on screen.
+    setFormat('');
+    setSavedFormat('');
     try {
       const resp = await apiAskNudgebee.getRcaFormat(accountId);
-      if (resp?.data?.format != null) {
-        setFormat(resp.data.format);
-      } else {
-        // Fallback default if nothing is found (though API usually provides the default)
-        setFormat(DEFAULT_RCA_FORMAT);
+      // getRcaFormat resolves with { data, errors } instead of throwing, so surface API errors explicitly.
+      if (resp?.errors?.length) {
+        throw new Error(resp.errors[0]?.message || 'Failed to load RCA Format');
       }
+      const loaded = resp?.data?.format != null ? resp.data.format : DEFAULT_RCA_FORMAT;
+      setFormat(loaded);
+      setSavedFormat(loaded);
     } catch (error) {
       console.error('Failed to fetch RCA Format:', error);
       snackbar.error('Failed to load RCA Format.');
@@ -46,14 +54,17 @@ const RCAFormatTab = ({ accountId }) => {
   }, [fetchRCAFormat]);
 
   const handleSave = async () => {
+    const formatToSave = format;
     setSaving(true);
     try {
       const payload = {
         account_id: accountId,
-        format: format,
+        format: formatToSave,
       };
       const resp = await apiAskNudgebee.updateRcaFormat(payload);
       if (resp?.data) {
+        // Re-baseline so the button disables again until the next edit.
+        setSavedFormat(formatToSave);
         snackbar.success('RCA Format updated successfully!');
       } else {
         snackbar.error('Failed to update RCA Format.');
@@ -93,7 +104,7 @@ const RCAFormatTab = ({ accountId }) => {
             Customize the Markdown template used by AI to generate RCA documents for your events.
           </Typography>
         </Box>
-        <Button tone='primary' size='md' onClick={handleSave} loading={saving} disabled={loading || saving}>
+        <Button tone='primary' size='md' onClick={handleSave} loading={saving} disabled={loading || saving || !isDirty}>
           Save Changes
         </Button>
       </WidgetCard>

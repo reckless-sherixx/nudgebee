@@ -142,8 +142,21 @@ func GcpBulkOnboard(context *security.RequestContext, query GcpBulkOnboardReques
 		return GcpBulkOnboardResponse{}, fmt.Errorf("failed to parse GCP credentials JSON: %w", err)
 	}
 
-	// Validate credentials once via collector using the SA's home project
-	validationResult := validateGCPCredentialsInternal(context.GetContext(), query.CredentialsJSON, gcpCredentials.ProjectID, "", "", "")
+	// Trim billing fields up front so they are consistent everywhere downstream:
+	// the non-empty guards below, the validation call, and the stored billing_data
+	// (whitespace in dataset/table would otherwise break the spends sync's
+	// `project.dataset.table` query).
+	query.BillingProjectID = strings.TrimSpace(query.BillingProjectID)
+	query.BillingDatasetID = strings.TrimSpace(query.BillingDatasetID)
+	query.BillingTableID = strings.TrimSpace(query.BillingTableID)
+
+	// Validate credentials once via collector using the SA's home project. Pass
+	// the billing fields through so the collector also verifies the SA can query
+	// the BigQuery billing export — billing access is shared across every project
+	// in the batch and is the sole arbiter of an account's connected status, so a
+	// billing-permission gap must block the whole onboard rather than silently
+	// create accounts that sit permanently NOT_CONNECTED.
+	validationResult := validateGCPCredentialsInternal(context.GetContext(), query.CredentialsJSON, gcpCredentials.ProjectID, query.BillingProjectID, query.BillingDatasetID, query.BillingTableID)
 	if !validationResult.Success {
 		return GcpBulkOnboardResponse{}, fmt.Errorf("invalid GCP credentials: %s", validationResult.ErrorMessage)
 	}

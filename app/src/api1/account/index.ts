@@ -382,6 +382,39 @@ const apiAccount = {
       return err;
     }
   },
+  // Which messaging platforms are connected for this tenant, unioned across the legacy
+  // messaging_platforms table and the new integrations storage (the same sources the
+  // Integrations page uses). Google Chat installs are stored under the
+  // 'google_chat_space' integration type, normalized to 'google_chat' so callers gate
+  // on one key. Independent of the channels upstream, so the notify toggles reflect
+  // connection state even when channel listing is unavailable.
+  listConnectedMessagingPlatforms: async function (): Promise<{ data: string[] }> {
+    const connected = new Set<string>();
+    try {
+      // queryGraphQL surfaces GraphQL failures as an errors array (or an Error
+      // return), not a throw — detect both so a failed source logs instead of
+      // silently contributing nothing (which would look like "not connected").
+      const lr: any = await queryGraphQL(LIST_MESSAGING_PLATFORMS_ACTION, 'ListMessagingPlatforms', { object: {} });
+      if (lr instanceof Error) throw lr;
+      if (lr?.data?.errors?.length) throw new Error(lr.data.errors[0]?.message || 'ListMessagingPlatforms failed');
+      (lr?.data?.data?.messagingplatforms_list?.data || []).forEach((m: { platform?: string }) => {
+        if (m?.platform) connected.add(m.platform);
+      });
+    } catch (err) {
+      console.error(`Failed to list messaging platforms- `, err);
+    }
+    try {
+      const res: any = await apiIntegrations.listIntegrations({ type: ['slack', 'ms_teams', 'google_chat', 'google_chat_space'], limit: 50 });
+      if (res instanceof Error) throw res;
+      if (res?.data?.errors?.length) throw new Error(res.data.errors[0]?.message || 'listIntegrations failed');
+      (res?.data?.data?.integrations_list?.rows || []).forEach((row: { type?: string }) => {
+        if (row?.type) connected.add(row.type === 'google_chat_space' ? 'google_chat' : row.type);
+      });
+    } catch (err) {
+      console.error(`Failed to list messaging integrations- `, err);
+    }
+    return { data: Array.from(connected) };
+  },
   async getAccountTypes() {
     try {
       const response = await queryGraphQL(LIST_ACCOUNT_TYPE, 'list_account_type', {});

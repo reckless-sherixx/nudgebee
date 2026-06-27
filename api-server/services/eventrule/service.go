@@ -740,6 +740,20 @@ func ExecutePlaybook(context *security.RequestContext, accountId string, event p
 	outputs := map[string]any{}
 	extractedLabels := map[string]map[string]any{}
 	executedAction := []string{}
+
+	// Pre-seed extractedLabels with an empty map for every action's output key.
+	// A later step's guard often references the extracted labels of an earlier step,
+	// e.g. {{ 'service.name' in extracted_labels['signoz_logs_enricher_5'] }}. When the
+	// earlier step is skipped (its own `if` is false) its key is never populated, so the
+	// subscript resolves to nil and gonja's `in`/getattr panics with "Can't use getattr on
+	// None" — failing the whole step before its `if` guard can short-circuit it. Seeding an
+	// empty map makes such guards evaluate to false cleanly. Real execution overwrites these.
+	for i, actionMap := range playbooksData {
+		for actionName := range actionMap {
+			extractedLabels[fmt.Sprintf("%s_%d", actionName, i)] = map[string]any{}
+		}
+	}
+
 	for i, actionMap := range playbooksData {
 		for actionName, rawParams := range actionMap {
 			action, found := playbooks.GetAction(actionName)
