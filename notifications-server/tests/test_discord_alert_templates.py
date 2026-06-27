@@ -81,6 +81,7 @@ def test_discord_grouped_slo_truncates_per_account():
     payload = get_discord_grouped_slo_alert_template(SLOAlertSummaryParams(events=events))
     assert len(payload["embeds"]) == 1
     assert "more in this account" in payload["embeds"][0]["description"]
+    assert "url" in payload["embeds"][0]
 
 
 def _anomaly(**over):

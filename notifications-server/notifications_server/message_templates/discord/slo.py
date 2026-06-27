@@ -84,6 +84,7 @@ def get_discord_grouped_slo_alert_template(input_data: SLOAlertSummaryParams) ->
         embeds.append(
             {
                 "title": f"Account: {account_name}",
+                "url": _account_url(acct_alerts[0].account_id),
                 "description": "\n".join(lines)[:4000],
                 "color": SLO_ALERT_COLOR,
             }

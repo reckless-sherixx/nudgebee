@@ -39,7 +39,7 @@ def get_discord_grouped_anomaly_template(input_data: AnomalyAlertSummaryParams) 
         cluster_name = acct_alerts[0].cluster or "Cluster"
         account_url = f"{public_ip()}/kubernetes/details/{cloud_account_id}?tab=2&subtab=6#events/anomaly"
         lines = [
-            f"• **{_v(a.title)}** — {_v(a.priority)}/{_v(a.status)} "
+            f"• **{_v(a.title or f'{a.subject_name} anomaly')}** — {_v(a.priority)}/{_v(a.status)} "
             f"on `{_v(a.subject_namespace)}/{_v(a.subject_name)}`"
             for a in acct_alerts[:MAX_ALERTS_PER_ACCOUNT]
         ]
