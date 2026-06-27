@@ -552,13 +552,15 @@ const WorkflowBuilderNoteBook: React.FC<WorkflowBuilderNotebookProps> = ({ mode 
   // Keyed on the URL id so closing the sidebar does not get fought by every
   // re-render; navigating to a different conversation re-triggers the open.
   useEffect(() => {
-    if (!nubiChatFeatureEnabled) return;
+    // Don't auto-open for read-only users: the panel is gated on canEdit, so
+    // flipping the flag would only push the layout aside for a hidden sidebar.
+    if (!nubiChatFeatureEnabled || !canEdit) return;
     const urlId = urlConversationId || urlSessionId || workflowSessionId;
     if (!urlId) return;
     if (autoOpenedNubiUrlRef.current === urlId) return;
     autoOpenedNubiUrlRef.current = urlId;
     setShowNubiChat(true);
-  }, [urlConversationId, urlSessionId, workflowSessionId, nubiChatFeatureEnabled]);
+  }, [urlConversationId, urlSessionId, workflowSessionId, nubiChatFeatureEnabled, canEdit]);
 
   // Adjust viewport when JSON panel or NubiChat visibility changes
   useEffect(() => {
@@ -3415,8 +3417,8 @@ const WorkflowBuilderNoteBook: React.FC<WorkflowBuilderNotebookProps> = ({ mode 
               />
               {/* Split View Container - NubiChat + Editor + JSON */}
               <Box sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'row', position: 'relative', overflow: 'hidden' }}>
-                {/* NubiChat Sidebar - Sliding Panel on Left (Feature Flag Controlled) */}
-                {nubiChatFeatureEnabled && (
+                {/* NubiChat Sidebar - Sliding Panel on Left (Feature Flag + write-access only) */}
+                {nubiChatFeatureEnabled && canEdit && (
                   <Box
                     sx={{
                       position: 'absolute',
@@ -3487,8 +3489,8 @@ const WorkflowBuilderNoteBook: React.FC<WorkflowBuilderNotebookProps> = ({ mode 
                     </Suspense>
                   </Box>
                 )}
-                {/* NubiChat Toggle Button (Feature Flag Controlled) */}
-                {nubiChatFeatureEnabled && (
+                {/* NubiChat Toggle Button (Feature Flag + write-access only) */}
+                {nubiChatFeatureEnabled && canEdit && (
                   <Box
                     id='workflow-nubi-chat-toggle'
                     onClick={() => setShowNubiChat(!showNubiChat)}
