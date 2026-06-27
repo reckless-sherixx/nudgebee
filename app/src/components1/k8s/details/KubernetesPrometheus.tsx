@@ -202,7 +202,7 @@ const KubernetesPrometheus: React.FC<KubernetesPrometheusProps> = ({
           });
           headers = [...headersWithWidth, { name: '', width: '' }];
           metricKeys.push('Count');
-        } else if (evidenceData[g]?.series_list_result[0].timestamps.length > 0) {
+        } else if (evidenceData[g]?.series_list_result?.[0]?.timestamps?.length > 0) {
           fromMetric = false;
           headers = [
             { name: 'timestamps', width: '', component: <Text value='timestamp' /> },

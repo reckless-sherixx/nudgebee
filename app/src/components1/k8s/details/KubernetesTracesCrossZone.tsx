@@ -126,7 +126,7 @@ const KubernetesTracesCrossZoneListing: React.FC<KubernetesTracesCrossZoneListin
             ];
           });
           setData(showData);
-          setTotalCount(res?.traces_groupings_v2_aggregate.rows[0].count);
+          setTotalCount(res?.traces_groupings_v2_aggregate?.rows?.[0]?.count ?? 0);
         } else {
           setData([]);
           setTotalCount(0);
