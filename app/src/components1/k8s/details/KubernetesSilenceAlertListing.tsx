@@ -168,7 +168,7 @@ const KubernetesSilenceAlertListing: React.FC<KubernetesSilenceAlertListingProps
           if (res?.data?.findings && res?.data?.findings.length > 0) {
             if (res?.data?.findings[0]?.evidence && res?.data?.findings[0].evidence.length > 0) {
               const evidenceData = JSON.parse(res?.data?.findings[0].evidence[0].data);
-              const headers = evidenceData[0].data.headers;
+              const headers = evidenceData?.[0]?.data?.headers;
               const convertedJson = {
                 rows:
                   evidenceData?.[0]?.data?.rows?.map((row: any) => {

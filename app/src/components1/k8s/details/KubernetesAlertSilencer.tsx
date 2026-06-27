@@ -103,8 +103,8 @@ const KubernetesAlertSilencer: React.FC<KubernetesAlertSilencerProps> = ({
     k8sApi
       .relayForwardRequest(data)
       .then((res: any) => {
-        if (res?.data.success) {
-          const evidence = res?.data?.findings[0].evidence[0];
+        if (res?.data?.success) {
+          const evidence = res?.data?.findings?.[0]?.evidence?.[0];
           if (evidence?.data) {
             const parsedData = JSON.parse(evidence.data);
             if (parsedData) {
