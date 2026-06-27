@@ -6837,23 +6837,21 @@ aws rds delete-db-instance --region {{region}} --db-instance-identifier {{recomm
         `,
       ],
       mitigations: [
-        `**AWS CLI command to upgrade EC2 instance generation:**
+        `**AWS CLI command to switch to an alternate EC2 instance type:**
 
         - Stop instance
 \`\`\`
-          aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
+aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
 \`\`\`
 
         - Modify Instance Type
-
 \`\`\`
-          aws ec2 modify-instance-attribute --instance-id "$INSTANCE_ID" --instance-type {"Value":"$REQUESTED_TYPE"}
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type Value={{recommendation.recommended_instance_type}}
 \`\`\`
 
         - Start Instance
-
 \`\`\`
-          aws ec2 start-instances --instance-ids "$INSTANCE_ID"
+aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
 \`\`\`
 
 `,
@@ -6883,9 +6881,21 @@ aws rds delete-db-instance --region {{region}} --db-instance-identifier {{recomm
         `Downsizing underutilized Amazon EC2 instances to meet the capacity needs at the lowest cost represents an efficient strategy to reduce your AWS cloud costs. For example, resizing a c4.xlarge-type instance provisioned in the US-East (N. Virginia) region to a c4.large-type instance due to CPU and memory underuse, you can roughly save $72 per month.`,
       ],
       mitigations: [
-        `**AWS CLI command to upgrade E2 instance generation:**
+        `**AWS CLI command to downsize the underutilized EC2 instance:**
+
+        - Stop instance
 \`\`\`
-          aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type {"Value": "{{recommendation.recommended_instance_type}}"} 
+aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+\`\`\`
+
+        - Modify Instance Type
+\`\`\`
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type Value={{recommendation.recommended_instance_type}}
+\`\`\`
+
+        - Start Instance
+\`\`\`
+aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
 \`\`\`
 `,
       ],
@@ -6901,9 +6911,21 @@ aws rds delete-db-instance --region {{region}} --db-instance-identifier {{recomm
         `Overutilized Amazon EC2 instances could indicate that the applications running on these machines do not have enough hardware resources to perform optimally. Upgrading (upsizing) overutilized Amazon EC2 instances to meet your load needs will improve directly the health and success of your applications, resulting in a more stable environment and a faster response time.`,
       ],
       mitigations: [
-        `**AWS CLI command to upgrade Ec2 instance generation:**
-\`\`\` 
-  aws rds modify-db-instance --region {{region}} --db-instance-identifier {{recommendation.instance_id}} --db-instance-class db.t3.medium --apply-immediately
+        `**AWS CLI command to upsize the overutilized EC2 instance:**
+
+        - Stop instance
+\`\`\`
+aws ec2 stop-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
+\`\`\`
+
+        - Modify Instance Type
+\`\`\`
+aws ec2 modify-instance-attribute --region {{region}} --instance-id {{recommendation.instance_id}} --instance-type Value={{recommendation.recommended_instance_type}}
+\`\`\`
+
+        - Start Instance
+\`\`\`
+aws ec2 start-instances --region {{region}} --instance-ids {{recommendation.instance_id}}
 \`\`\`
         `,
       ],

@@ -3,7 +3,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import LinkIcon from '@mui/icons-material/Link';
 import { useState, useEffect } from 'react';
 import { usePagination } from '@hooks/usePagination';
-import CustomTable2 from '@shared/tables/CustomTable2';
+import CustomTable2 from '@common-new/tables/CustomTable2';
 import { ds } from 'src/utils/colors';
 import { Label, type LabelTone } from '@components1/ds/Label';
 import { Button } from '@components1/ds/Button';

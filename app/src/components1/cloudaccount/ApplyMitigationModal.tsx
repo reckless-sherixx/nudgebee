@@ -23,7 +23,11 @@ function extractCommandsFromMarkdown(markdown: string | null): string[] {
   let match;
   while ((match = fenced.exec(markdown)) !== null) {
     const cmd = match[1].trim();
-    if (cmd) commands.push(cmd);
+    // Skip commands with unresolved {{...}} template placeholders: the source
+    // recommendation is missing the field, so executing would send literal
+    // braces to the cloud CLI and fail (e.g. AWS exit 252). Better to hide the
+    // command than run a guaranteed-broken one.
+    if (cmd && !cmd.includes('{{')) commands.push(cmd);
   }
   return commands;
 }
