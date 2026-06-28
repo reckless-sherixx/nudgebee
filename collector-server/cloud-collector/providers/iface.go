@@ -366,6 +366,10 @@ type LogMessage struct {
 	Message   string     `json:"message"`
 	Timestamp int64      `json:"timestamp"`
 	Labels    []LogLabel `json:"labels"`
+	// Attributes carries the full structured log record (provider-agnostic, OTel-style
+	// keys) so downstream consumers aren't limited to the hand-picked Message/Labels.
+	// Optional and omitted when empty to stay backward-compatible with existing consumers.
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 // LogQueryStatistics provides statistics about the executed log query.

@@ -202,9 +202,10 @@ type QueryLogResponse struct {
 }
 
 type LogMessage struct {
-	Message   string     `json:"message"`
-	Timestamp int64      `json:"timestamp"`
-	Labels    []LogLabel `json:"labels"`
+	Message    string         `json:"message"`
+	Timestamp  int64          `json:"timestamp"`
+	Labels     []LogLabel     `json:"labels"`
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 type LogLabel struct {

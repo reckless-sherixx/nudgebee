@@ -197,6 +197,83 @@ func logEntryToMessage(entry *logging.Entry) providers.LogMessage {
 		}
 	}
 
+	// Capture the full structured entry as attributes (OTel-style keys). This enumerates
+	// LogEntry's fixed field set rather than a per-scenario subset, so request details
+	// (status / IP / URL / method / UA), operation, trace and source-location survive for
+	// ANY GCP log type — no per-alert hardcoding. Optional: nil/zero fields are skipped.
+	attrs := map[string]any{}
+	if entry.InsertID != "" {
+		attrs["log.record.uid"] = entry.InsertID
+	}
+	if entry.Trace != "" {
+		attrs["trace.id"] = entry.Trace
+	}
+	if entry.SpanID != "" {
+		attrs["span.id"] = entry.SpanID
+	}
+	if entry.TraceSampled {
+		attrs["trace.sampled"] = true
+	}
+	if hr := entry.HTTPRequest; hr != nil {
+		if hr.Status != 0 {
+			attrs["http.response.status_code"] = hr.Status
+		}
+		if hr.RemoteIP != "" {
+			attrs["client.address"] = hr.RemoteIP
+		}
+		if hr.LocalIP != "" {
+			attrs["server.address"] = hr.LocalIP
+		}
+		if hr.RequestSize != 0 {
+			attrs["http.request.body.size"] = hr.RequestSize
+		}
+		if hr.ResponseSize != 0 {
+			attrs["http.response.body.size"] = hr.ResponseSize
+		}
+		if hr.Latency != 0 {
+			attrs["http.server.request.duration_ms"] = hr.Latency.Milliseconds()
+		}
+		if r := hr.Request; r != nil {
+			if r.Method != "" {
+				attrs["http.request.method"] = r.Method
+			}
+			if r.URL != nil {
+				attrs["url.full"] = r.URL.String()
+			}
+			if ua := r.UserAgent(); ua != "" {
+				attrs["user_agent.original"] = ua
+			}
+		}
+	}
+	if op := entry.Operation; op != nil {
+		if op.GetId() != "" {
+			attrs["gcp.log.operation.id"] = op.GetId()
+		}
+		if op.GetProducer() != "" {
+			attrs["gcp.log.operation.producer"] = op.GetProducer()
+		}
+		if op.GetFirst() {
+			attrs["gcp.log.operation.first"] = true
+		}
+		if op.GetLast() {
+			attrs["gcp.log.operation.last"] = true
+		}
+	}
+	if sl := entry.SourceLocation; sl != nil {
+		if sl.GetFile() != "" {
+			attrs["code.filepath"] = sl.GetFile()
+		}
+		if sl.GetLine() != 0 {
+			attrs["code.lineno"] = sl.GetLine()
+		}
+		if sl.GetFunction() != "" {
+			attrs["code.function"] = sl.GetFunction()
+		}
+	}
+	if len(attrs) > 0 {
+		msg.Attributes = attrs
+	}
+
 	return msg
 }
 

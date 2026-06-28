@@ -1491,10 +1491,28 @@ func (a *cloudLogAction) Execute(ctx playbooks.PlaybookActionContext, rawParams 
 		"query":                rawParams,
 	}
 
-	const maxMessageLen = 4096 // Truncate individual log messages to prevent oversized evidences
+	// Evidence size governance (single policy): cap per-message length, entry count and
+	// total payload so richer structured attributes can't produce multi-hundred-KB events.
+	const (
+		maxMessageLen  = 4096   // per-message cap
+		maxLogEntries  = 500    // cap entry count in one cloud_logs evidence
+		maxEvidenceLen = 262144 // ~256KB cap for the logoutput payload
+	)
+	// Highest-value structured attributes surfaced as labels so they render in the
+	// existing log card with no frontend change (the card already shows labels).
+	flattenAttrKeys := []string{
+		"http.response.status_code", "http.request.method", "url.full",
+		"client.address", "user_agent.original", "http.server.request.duration_ms",
+	}
 	logoutput := []map[string]any{}
+	approxBytes := 0
+	truncated := false
 
 	for _, item := range resourceResp.Results {
+		if len(logoutput) >= maxLogEntries {
+			truncated = true
+			break
+		}
 		log := map[string]any{}
 		log["timestamp"] = item.Timestamp
 		msg := item.Message
@@ -1506,8 +1524,38 @@ func (a *cloudLogAction) Execute(ctx playbooks.PlaybookActionContext, rawParams 
 		for _, v := range item.Labels {
 			labels[v.Label] = v.Value
 		}
+		// Surface key request fields (status / IP / URL / method / UA / latency) as labels.
+		for _, k := range flattenAttrKeys {
+			if val, ok := item.Attributes[k]; ok {
+				labels[k] = fmt.Sprintf("%v", val)
+			}
+		}
 		log["labels"] = labels
+
+		entryBytes := len(msg) + 128
+		if len(item.Attributes) > 0 {
+			log["attributes"] = item.Attributes
+			// Rough size estimate without serializing every entry (this runs per log row).
+			for k, v := range item.Attributes {
+				entryBytes += len(k)
+				if s, ok := v.(string); ok {
+					entryBytes += len(s)
+				} else {
+					entryBytes += 16
+				}
+			}
+		}
+		if approxBytes+entryBytes > maxEvidenceLen && len(logoutput) > 0 {
+			truncated = true
+			break
+		}
+		approxBytes += entryBytes
 		logoutput = append(logoutput, log)
+	}
+
+	if truncated {
+		metadata["truncated"] = true
+		metadata["truncated_reason"] = "cloud_logs evidence size/entry cap"
 	}
 
 	if len(logoutput) == 0 {
