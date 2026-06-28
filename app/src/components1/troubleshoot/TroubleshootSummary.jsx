@@ -6,7 +6,8 @@ import { Stat } from '@components1/ds/Stat';
 import { Chip } from '@components1/ds/Chip';
 import PropTypes from 'prop-types';
 import { ds } from 'src/utils/colors';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import apiKubernetes1 from '@api1/kubernetes1';
 import { getLast24Hrs, getSpecificTime } from '@lib/datetime';
 import apiAskNudgebee from '@api1/ask-nudgebee';
@@ -117,6 +118,12 @@ TimeSavedValue.propTypes = {
 
 const TroubleshootSummary = ({ type = 'events', tab = 'auto', onWidgetFilter }) => {
   const { baseTitle } = useTenantBranding();
+  const router = useRouter();
+  // Scope the summary cards to the same account selection the Events list uses
+  // (the shared `accountId` URL query param). Without this the cards rolled up
+  // across ALL accounts while the list was account-scoped, inflating the counts.
+  const accountIdParam = router.query.accountId;
+  const accountIds = useMemo(() => (accountIdParam ? String(accountIdParam).split(',').filter(Boolean) : []), [accountIdParam]);
   const [eventInfographics, setEventInfographics] = useState({
     loading: false,
     current: 0,
@@ -157,6 +164,7 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto', onWidgetFilter }) 
           endDate: new Date().toISOString(),
           previousStartDate: new Date(getSpecificTime(2880)).toISOString(),
           previousEndDate: getLast24Hrs().toISOString(),
+          accountId: accountIds,
         })
         .then((res) => {
           const cur = res?.data?.data?.current?.rows?.[0] || {};
@@ -289,7 +297,7 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto', onWidgetFilter }) 
           });
         });
     }
-  }, [type, tab]);
+  }, [type, tab, accountIds]);
 
   const last24hPill = (
     <Typography

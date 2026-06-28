@@ -31,7 +31,7 @@ import ticketsApi from '@api1/tickets';
 import apiUser from '@api1/user';
 import { getDateString, getLast24Hrs } from '@lib/datetime';
 import { hasWriteAccess } from '@lib/auth';
-import { safeJSONParse, titleCaseForAggregationKey, syncFilterFromQuery, toSeverityLevel, EXCLUDED_TRIAGE_AGGREGATION_KEYS } from 'src/utils/common';
+import { safeJSONParse, titleCaseForAggregationKey, syncFilterFromQuery, EXCLUDED_TRIAGE_AGGREGATION_KEYS } from 'src/utils/common';
 import { applyFiltersOnRouter } from '@lib/router';
 import { snackbar } from '@components1/common/snackbarService';
 import { action } from 'src/utils/actionStyles';
