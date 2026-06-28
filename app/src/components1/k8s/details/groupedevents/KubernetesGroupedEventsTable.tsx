@@ -33,7 +33,13 @@ import apiUser from '@api1/user';
 import ticketsApi from '@api1/tickets';
 import { applyFiltersOnRouter } from '@lib/router';
 import { hasWriteAccess } from '@lib/auth';
-import { convertToReadableFormat, titleCaseForAggregationKey, syncFilterFromQuery, toSeverityLevel } from 'src/utils/common';
+import {
+  convertToReadableFormat,
+  titleCaseForAggregationKey,
+  syncFilterFromQuery,
+  toSeverityLevel,
+  EXCLUDED_TRIAGE_AGGREGATION_KEYS,
+} from 'src/utils/common';
 import { Box, Typography } from '@mui/material';
 import useKubernetesEventFilters from '@hooks/useKubernetesEventFilters';
 import { useEventCloudFilter } from '@hooks/useCloudFilters';
@@ -269,6 +275,48 @@ const transformTableData = (
       ];
     }
 
+    // App (group-by-application) Columns
+    if (groupEventType === 'app') {
+      const appNbStatus = getNBStatusDisplay(item.latest_nb_status);
+      const appDrilldown = {
+        subject_name: [item.subject_name],
+        subject_namespace: item.subject_namespace,
+        finding_type: '',
+        startTime: dateRange.startDate,
+        endTime: dateRange.endDate,
+        accountId: item.account_id,
+        ...(nbStatus && nbStatus.length > 0 ? { nb_status: nbStatus } : {}),
+      };
+      return [
+        {
+          component: <SeverityIcon level={toSeverityLevel(severity)} aria-label={`${severity || 'unknown'}`} />,
+          data: severity,
+        },
+        {
+          component: (
+            <Box>
+              <Text showAutoEllipsis value={item.subject_name || '-'} style={{ fontWeight: 'var(--ds-font-weight-medium)' }} />
+              {isTroubleshootPage && <Text value={`acc: ${accountName}`} secondaryText showAutoEllipsis />}
+              {item.subject_namespace && <Text value={`${namespaceLabel}: ${item.subject_namespace}`} secondaryText showAutoEllipsis />}
+            </Box>
+          ),
+          drilldownQuery: appDrilldown,
+        },
+        { component: <Datetime baseDate={new Date()} value={item.max_created_at} /> },
+        { component: <Text showAutoEllipsis value={item.event_count} /> },
+        { component: <Text value={item.count_aggregation_key ?? '-'} /> },
+        {
+          component: (
+            <Tooltip variant='default' title={getTriageStatusTooltip(item.latest_nb_status)} placement='top'>
+              <Box>
+                <Label margin='auto' text={appNbStatus.label} variant={appNbStatus.variant} />
+              </Box>
+            </Tooltip>
+          ),
+        },
+      ];
+    }
+
     // Event Type Columns
     const eventTypeNbStatus = getNBStatusDisplay(item.latest_nb_status);
     const eventTypeDrilldown = {
@@ -369,7 +417,7 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
   const [selectedPriority, setSelectedPriority] = useState('');
 
   const [selectedSource, setSelectedSource] = useState<any[]>([]);
-  const [selectedNBStatus, setSelectedNBStatus] = useState<Array<{ label: string; value: string }>>([{ value: 'OPEN', label: 'Open' }]);
+  const [selectedNBStatus, setSelectedNBStatus] = useState<Array<{ label: string; value: string }>>([]);
   const [selectedServiceName, setSelectedServiceName] = useState('');
   const [selectedIssueType, setSelectedIssueType] = useState<string>((router?.query?.issueType as string) || 'all');
 
@@ -433,10 +481,9 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
   }, [sourceFilter]);
 
   // Sort state
-  const [sortConfig, setSortConfig] = useState<{ name: string; order: 'asc' | 'desc' }>({
-    name: 'Priority',
-    order: 'desc',
-  });
+  const [sortConfig, setSortConfig] = useState<{ name: string; order: 'asc' | 'desc' }>(
+    groupEventType === 'app' || groupEventType === 'event_type' ? { name: 'Event Count', order: 'desc' } : { name: 'Priority', order: 'desc' }
+  );
 
   // Classify Modal State
   const [classifyModalOpen, setClassifyModalOpen] = useState(false);
@@ -591,6 +638,40 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
       ];
     }
 
+    if (groupEventType === 'app') {
+      return [
+        {
+          name: 'Severity',
+          width: '12%',
+          info: "Severity is the original urgency level assigned by the source monitoring/alerting system, based on that tool's built-in rules or your configured thresholds",
+          infoPlacement: 'top-start',
+        },
+        {
+          name: 'Application',
+          width: '30%',
+          info: 'The workload or resource the events are associated with.',
+        },
+        {
+          name: 'Last Occurred',
+          width: '14%',
+          info: 'The most recent time an event was reported for this application.',
+          sortEnabled: true,
+        },
+        {
+          name: 'Event Count',
+          width: '12%',
+          info: 'Total number of events reported for this application in the selected time range.',
+          sortEnabled: true,
+        },
+        {
+          name: 'Event Types',
+          width: '10%',
+          info: 'Number of distinct event types reported for this application.',
+        },
+        triageStatusHeader,
+      ];
+    }
+
     if (groupEventType === 'event_type') {
       return [
         {
@@ -614,6 +695,7 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
           name: 'Event Count',
           width: '12%',
           info: 'Number of times this event has fired in the selected time range.',
+          sortEnabled: true,
         },
         {
           name: 'Subject',
@@ -644,6 +726,8 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
       subject_name: selectedWorkload,
       subject_namespace: isCloudAccount && selectedServiceName ? selectedServiceName : selectedNamespace,
       aggregation_key: selectedAggregationKey?.map((e: any) => e.value) || [],
+      // Dashboard-only: hide low-signal config-change records from every grouped list.
+      aggregation_key_nin: isTroubleshootPage ? EXCLUDED_TRIAGE_AGGREGATION_KEYS : undefined,
       status: selectedStatus,
       priority: selectedPriority,
       priority_nin: !selectedPriority ? ['DEBUG', 'INFO'] : undefined,
@@ -680,6 +764,20 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
         'fingerprint_event_count',
       ];
       groupCols = ['tenant_id', 'account_id', 'subject_name', 'subject_namespace', 'aggregation_key', 'fingerprint'];
+    } else if (groupEventType === 'app') {
+      cols = [
+        'max_created_at',
+        'event_count',
+        'subject_name',
+        'subject_namespace',
+        'count_aggregation_key',
+        'distinct_priority',
+        'distinct_status',
+        'account_id',
+        'latest_nb_status',
+        'latest_computed_score',
+      ];
+      groupCols = ['tenant_id', 'account_id', 'subject_name', 'subject_namespace'];
     } else {
       cols = [
         'max_created_at',
@@ -991,7 +1089,7 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
       value: selectedSource,
       isOptionsLoading: isOptionsLoading.source,
     },
-    ...(groupEventType === 'event_type' || groupEventType === 'fingerprint'
+    ...(groupEventType === 'event_type' || groupEventType === 'fingerprint' || groupEventType === 'app'
       ? [
           {
             type: 'dropdown',

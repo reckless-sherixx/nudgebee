@@ -31,7 +31,7 @@ import ticketsApi from '@api1/tickets';
 import apiUser from '@api1/user';
 import { getDateString, getLast24Hrs } from '@lib/datetime';
 import { hasWriteAccess } from '@lib/auth';
-import { safeJSONParse, titleCaseForAggregationKey, syncFilterFromQuery } from 'src/utils/common';
+import { safeJSONParse, titleCaseForAggregationKey, syncFilterFromQuery, EXCLUDED_TRIAGE_AGGREGATION_KEYS } from 'src/utils/common';
 import { applyFiltersOnRouter } from '@lib/router';
 import { snackbar } from '@components1/common/snackbarService';
 import { action } from 'src/utils/actionStyles';
@@ -711,6 +711,10 @@ const KubernetesEventsTable = ({
     } else if (selectedIssueType === 'recurring') {
       query.is_new_issue = false;
     }
+    // Dashboard-only: hide low-signal config-change records from the Events list.
+    if (isTroubleshootPage) {
+      query.aggregation_key_nin = EXCLUDED_TRIAGE_AGGREGATION_KEYS;
+    }
     setLoading(true);
 
     // Build row data from events + ticket map
@@ -1024,6 +1028,9 @@ const KubernetesEventsTable = ({
     }
     if (resource_ids.length) {
       query.resource_ids = resource_ids;
+    }
+    if (isTroubleshootPage) {
+      query.aggregation_key_nin = EXCLUDED_TRIAGE_AGGREGATION_KEYS;
     }
     if (defaultQuery) {
       query = { ...query, ...defaultQuery };

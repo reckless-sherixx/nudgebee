@@ -6,7 +6,8 @@ import { Stat } from '@components1/ds/Stat';
 import { Chip } from '@components1/ds/Chip';
 import PropTypes from 'prop-types';
 import { ds } from 'src/utils/colors';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import apiKubernetes1 from '@api1/kubernetes1';
 import { getLast24Hrs, getSpecificTime } from '@lib/datetime';
 import apiAskNudgebee from '@api1/ask-nudgebee';
@@ -115,13 +116,28 @@ TimeSavedValue.propTypes = {
   minutes: PropTypes.number,
 };
 
-const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
+const TroubleshootSummary = ({ type = 'events', tab = 'auto', onWidgetFilter }) => {
   const { baseTitle } = useTenantBranding();
+  const router = useRouter();
+  // Scope the summary cards to the same account selection the Events list uses
+  // (the shared `accountId` URL query param). Without this the cards rolled up
+  // across ALL accounts while the list was account-scoped, inflating the counts.
+  const accountIdParam = router.query.accountId;
+  const accountIds = useMemo(() => (accountIdParam ? String(accountIdParam).split(',').filter(Boolean) : []), [accountIdParam]);
   const [eventInfographics, setEventInfographics] = useState({
     loading: false,
     current: 0,
     previous: 0,
     diff: 0,
+    attention: 0,
+    attentionPrev: 0,
+    attentionDiff: 0,
+    newIssues: 0,
+    newIssuesPrev: 0,
+    newIssuesDiff: 0,
+    highSev: 0,
+    highSevPrev: 0,
+    highSevDiff: 0,
   });
   const [investigateInfographics, setInvestigateInfographics] = useState({
     loading: false,
@@ -148,15 +164,36 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
           endDate: new Date().toISOString(),
           previousStartDate: new Date(getSpecificTime(2880)).toISOString(),
           previousEndDate: getLast24Hrs().toISOString(),
+          accountId: accountIds,
         })
         .then((res) => {
-          const previous = res?.data?.data?.previous?.rows?.[0]?.event_count || 0;
-          const current = res?.data?.data?.current?.rows?.[0]?.event_count || 0;
+          const cur = res?.data?.data?.current?.rows?.[0] || {};
+          const prev = res?.data?.data?.previous?.rows?.[0] || {};
+          const pct = (c, p) => (p === 0 ? (c > 0 ? 100 : 0) : Math.round(((c - p) / p) * 100));
+
+          const current = cur.event_count || 0;
+          const previous = prev.event_count || 0;
+          const newIssues = cur.count_new_issues || 0;
+          const newIssuesPrev = prev.count_new_issues || 0;
+          const highSev = cur.count_priority_high || 0;
+          const highSevPrev = prev.count_priority_high || 0;
+          const attention = res?.data?.data?.current_attention?.rows?.[0]?.event_count || 0;
+          const attentionPrev = res?.data?.data?.previous_attention?.rows?.[0]?.event_count || 0;
+
           setEventInfographics({
             loading: false,
             current,
             previous,
-            diff: previous === 0 ? (current > 0 ? 100 : 0) : Math.round(((current - previous) / previous) * 100),
+            diff: pct(current, previous),
+            attention,
+            attentionPrev,
+            attentionDiff: pct(attention, attentionPrev),
+            newIssues,
+            newIssuesPrev,
+            newIssuesDiff: pct(newIssues, newIssuesPrev),
+            highSev,
+            highSevPrev,
+            highSevDiff: pct(highSev, highSevPrev),
           });
         })
         .catch((err) => {
@@ -260,7 +297,7 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
           });
         });
     }
-  }, [type, tab]);
+  }, [type, tab, accountIds]);
 
   const last24hPill = (
     <Typography
@@ -281,6 +318,33 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
     mt: 0,
     padding: `${ds.space[3]} ${ds.space[4]}`,
   };
+
+  // Summary widgets are drill-downs: clicking one opens the Events list filtered
+  // by that metric. Only enabled when a handler is provided (events view).
+  const clickable = typeof onWidgetFilter === 'function';
+  const clickableCardSx = clickable
+    ? {
+        cursor: 'pointer',
+        transition: 'border-color 120ms ease',
+        '&:hover': { borderColor: ds.gray[300] },
+        '&:focus-visible': { outline: `2px solid ${ds.blue[400]}`, outlineOffset: '2px' },
+      }
+    : {};
+  const cardInteractionProps = (query, testId) =>
+    clickable
+      ? {
+          onClick: () => onWidgetFilter(query),
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onWidgetFilter(query);
+            }
+          },
+          role: 'button',
+          tabIndex: 0,
+          'data-testid': testId,
+        }
+      : {};
 
   const inv = investigateInfographics;
   const invHasBaseline = inv.previous > 0;
@@ -363,9 +427,13 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
   const ev = eventInfographics;
   const evHasBaseline = ev.previous > 0;
 
+  const attentionHasBaseline = ev.attentionPrev > 0;
+  const newIssuesHasBaseline = ev.newIssuesPrev > 0;
+  const highSevHasBaseline = ev.highSevPrev > 0;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'row', width: '100%', gap: ds.space[3], padding: `${ds.space[5]} 0` }}>
-      <WidgetCard sx={{ ...widgetCardSx, maxWidth: ds.space.mul(0, 160) }}>
+      <WidgetCard sx={{ ...widgetCardSx, ...clickableCardSx }} {...cardInteractionProps({}, 'widget-total-events')}>
         <Stat
           size='md'
           label='Total Events'
@@ -387,6 +455,78 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
           sub={!ev.loading && evHasBaseline ? `vs ${ev.previous.toLocaleString()} prev 24h` : undefined}
         />
       </WidgetCard>
+
+      <WidgetCard
+        sx={{ ...widgetCardSx, ...clickableCardSx }}
+        {...cardInteractionProps({ nbStatus: 'OPEN,ACTION_REQUIRED' }, 'widget-needs-attention')}
+      >
+        <Stat
+          size='md'
+          label='Needs Attention'
+          info={{
+            tooltip:
+              'Distinct triage items (grouped events) with at least one Open or Action Required event in the last 24 hours — the backlog the Triage Inbox exists to clear. The percentage compares against the previous 24-hour period.',
+            position: 'right',
+          }}
+          value={
+            ev.loading ? (
+              '…'
+            ) : (
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: ds.space[2] }}>
+                <Box component='span'>{ev.attention.toLocaleString()}</Box>
+                <TrendChip diff={ev.attentionDiff} hasBaseline={attentionHasBaseline} kind='up-is-bad' />
+              </Box>
+            )
+          }
+          sub={!ev.loading && attentionHasBaseline ? `vs ${ev.attentionPrev.toLocaleString()} prev 24h` : undefined}
+        />
+      </WidgetCard>
+
+      <WidgetCard sx={{ ...widgetCardSx, ...clickableCardSx }} {...cardInteractionProps({ issueType: 'new' }, 'widget-new-issues')}>
+        <Stat
+          size='md'
+          label='New Issues'
+          info={{
+            tooltip:
+              'Distinct issues first seen in the last 7 days that occurred in the last 24 hours — net-new problems as opposed to recurring noise. The percentage compares against the previous 24-hour period.',
+            position: 'right',
+          }}
+          value={
+            ev.loading ? (
+              '…'
+            ) : (
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: ds.space[2] }}>
+                <Box component='span'>{ev.newIssues.toLocaleString()}</Box>
+                <TrendChip diff={ev.newIssuesDiff} hasBaseline={newIssuesHasBaseline} kind='up-is-bad' />
+              </Box>
+            )
+          }
+          sub={!ev.loading && newIssuesHasBaseline ? `vs ${ev.newIssuesPrev.toLocaleString()} prev 24h` : undefined}
+        />
+      </WidgetCard>
+
+      <WidgetCard sx={{ ...widgetCardSx, ...clickableCardSx }} {...cardInteractionProps({ eventPriority: 'HIGH' }, 'widget-high-severity')}>
+        <Stat
+          size='md'
+          label='High Severity'
+          info={{
+            tooltip:
+              'Number of High-priority events ingested in the last 24 hours, by the source system’s severity. The percentage compares against the previous 24-hour period.',
+            position: 'right',
+          }}
+          value={
+            ev.loading ? (
+              '…'
+            ) : (
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: ds.space[2] }}>
+                <Box component='span'>{ev.highSev.toLocaleString()}</Box>
+                <TrendChip diff={ev.highSevDiff} hasBaseline={highSevHasBaseline} kind='up-is-bad' />
+              </Box>
+            )
+          }
+          sub={!ev.loading && highSevHasBaseline ? `vs ${ev.highSevPrev.toLocaleString()} prev 24h` : undefined}
+        />
+      </WidgetCard>
     </Box>
   );
 };
@@ -394,6 +534,7 @@ const TroubleshootSummary = ({ type = 'events', tab = 'auto' }) => {
 TroubleshootSummary.propTypes = {
   type: PropTypes.oneOf(['events', 'investigations']),
   tab: PropTypes.oneOf(['auto', 'manual']),
+  onWidgetFilter: PropTypes.func,
 };
 
 export default TroubleshootSummary;
