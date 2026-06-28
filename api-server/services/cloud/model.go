@@ -318,3 +318,21 @@ type ApplyCommandResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
+
+type ExecuteCloudCommandRequest struct {
+	AccountId        string   `json:"account_id" validate:"required"`
+	Commands         []string `json:"commands" validate:"required,min=1"`
+	RecommendationId string   `json:"recommendation_id"`
+	ResolutionId     string   `json:"resolution_id"`
+}
+
+type CommandResult struct {
+	Command string `json:"command"`
+	Status  string `json:"status"` // SUCCESS | FAILED | NOT_EXECUTED
+	Output  string `json:"output,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ExecuteCloudCommandResponse struct {
+	Results []CommandResult `json:"results"`
+}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"nudgebee/collector/cloud/account"
+	"nudgebee/collector/cloud/audit"
 	"nudgebee/collector/cloud/common"
 	"nudgebee/collector/cloud/config"
 	"nudgebee/collector/cloud/providers"
@@ -77,6 +78,17 @@ type getEventsRequest struct {
 type executeCommand struct {
 	AccountId string `json:"account_id" validate:"required"`
 	Command   string `json:"command" validate:"required"`
+}
+
+// maxBatchCommands caps the number of commands in a single execute_cli_batch call.
+// Recommendation resolution scripts rarely exceed 5 steps; 10 covers the most complex cases.
+const maxBatchCommands = 10
+
+type executeBatchCommand struct {
+	AccountId        string   `json:"account_id" validate:"required"`
+	Commands         []string `json:"commands" validate:"required"`
+	RecommendationId string   `json:"recommendation_id"`
+	ResolutionId     string   `json:"resolution_id"`
 }
 
 type storeEventRulesRequest struct {
@@ -648,6 +660,79 @@ func handleCloudProviderApis(r *gin.Engine, tracer *trace.Tracer, meter *metric.
 			return
 		}
 		c.JSON(200, buildApiResponse(resp))
+	})
+
+	groupV2.POST("/execute_cli_batch", func(c *gin.Context) {
+		request := executeBatchCommand{}
+		err := c.ShouldBindJSON(&request)
+		if err != nil {
+			c.JSON(400, buildApiResponse(nil, err))
+			return
+		}
+		err = common.ValidateStruct(request)
+		if err != nil {
+			slog.Error("error validating execute_cli_batch", "error", err)
+			c.JSON(400, buildApiResponse(nil, err))
+			return
+		}
+		if len(request.Commands) == 0 {
+			c.JSON(400, buildApiResponse(nil, errors.New("commands list is empty")))
+			return
+		}
+		if len(request.Commands) > maxBatchCommands {
+			c.JSON(400, buildApiResponse(nil, fmt.Errorf("batch exceeds maximum of %d commands", maxBatchCommands)))
+			return
+		}
+
+		ctx, cancel, err := buildContextFromGin(c, logger, tracer, meter, request.AccountId)
+		if err != nil {
+			c.JSON(400, buildApiResponse(nil, err))
+			return
+		}
+		if cancel != nil {
+			defer cancel()
+		}
+
+		results := make([]audit.CommandExecutionResult, 0, len(request.Commands))
+		allSuccess := true
+		failedAt := -1
+
+		for i, cmd := range request.Commands {
+			output, execErr := account.ExecuteCliCommand(ctx, request.AccountId, cmd)
+			result := audit.CommandExecutionResult{Command: cmd}
+			if execErr != nil {
+				result.Status = audit.CommandStatusFailed
+				result.Error = execErr.Error()
+				allSuccess = false
+				results = append(results, result)
+				failedAt = i
+				break
+			} else {
+				result.Status = audit.CommandStatusSuccess
+				result.Output = output
+				results = append(results, result)
+			}
+		}
+
+		if failedAt >= 0 {
+			for _, cmd := range request.Commands[failedAt+1:] {
+				results = append(results, audit.CommandExecutionResult{
+					Command: cmd,
+					Status:  audit.CommandStatusNotExecuted,
+				})
+			}
+		}
+
+		auditStatus := audit.EventStatusSuccess
+		if !allSuccess {
+			auditStatus = audit.EventStatusFailure
+		}
+
+		if auditErr := audit.LogCliBatchCommand(ctx, request.AccountId, request.RecommendationId, request.ResolutionId, results, auditStatus); auditErr != nil {
+			ctx.GetLogger().Warn("failed to log batch audit record for execute_cli_batch", "error", auditErr)
+		}
+
+		c.JSON(200, buildApiResponse(results))
 	})
 
 	groupV2.POST("/performance_insights", func(c *gin.Context) {

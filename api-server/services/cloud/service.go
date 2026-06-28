@@ -811,6 +811,89 @@ func ApplyCommand(ctx *security.RequestContext, cmdRequest ApplyCommandRequest) 
 	return parseApplyCommandResponse(resp.StatusCode, body)
 }
 
+func ExecuteCloudCommand(ctx *security.RequestContext, req ExecuteCloudCommandRequest) (ExecuteCloudCommandResponse, error) {
+	sc := ctx.GetSecurityContext()
+	if sc == nil || sc.GetTenantId() == "" {
+		return ExecuteCloudCommandResponse{}, errors.New("tenant is required")
+	}
+
+	headers := map[string]string{
+		config.Config.CloudCollectorServerTokenHeader: config.Config.CloudCollectorServerToken,
+		"x-tenant-id": sc.GetTenantId(),
+	}
+	if sc.GetUserId() != "" {
+		headers["x-user-id"] = sc.GetUserId()
+	}
+
+	resp, err := common.HttpPost(
+		config.Config.CloudCollectorServerUrl+"/v1/cloud/execute_cli_batch",
+		common.HttpWithTimeout(280*time.Second),
+		common.HttpWithJsonBody(map[string]interface{}{
+			"account_id":        req.AccountId,
+			"commands":          req.Commands,
+			"recommendation_id": req.RecommendationId,
+			"resolution_id":     req.ResolutionId,
+		}),
+		common.HttpWithHeaders(headers),
+	)
+	if err != nil {
+		return ExecuteCloudCommandResponse{}, fmt.Errorf("failed to call cloud-collector: %w", err)
+	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return ExecuteCloudCommandResponse{}, fmt.Errorf("failed to read response body: %w", readErr)
+	}
+
+	return parseExecuteCloudCommandResponse(resp.StatusCode, body)
+}
+
+// parseExecuteCloudCommandResponse parses the cloud-collector execute_cli_batch response.
+// The collector wraps results in `{"data": [{command, status, output, error}, ...], "errors": [...]}`.
+// status is one of SUCCESS / FAILED / NOT_EXECUTED.
+// On non-200 the provider error message is surfaced directly.
+func parseExecuteCloudCommandResponse(statusCode int, body []byte) (ExecuteCloudCommandResponse, error) {
+	var parsed struct {
+		Data []struct {
+			Command string `json:"command"`
+			Status  string `json:"status"`
+			Output  string `json:"output"`
+			Error   string `json:"error"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	parseErr := json.Unmarshal(body, &parsed)
+
+	if statusCode != 200 {
+		message := fmt.Sprintf("cloud-collector returned %d", statusCode)
+		if parseErr == nil && len(parsed.Errors) > 0 && parsed.Errors[0].Message != "" {
+			message = parsed.Errors[0].Message
+		} else if len(body) > 0 {
+			message = fmt.Sprintf("%s: %s", message, string(body))
+		}
+		return ExecuteCloudCommandResponse{}, errors.New(message)
+	}
+	if parseErr != nil {
+		return ExecuteCloudCommandResponse{}, fmt.Errorf("failed to parse response: %w", parseErr)
+	}
+
+	results := make([]CommandResult, 0, len(parsed.Data))
+	for _, r := range parsed.Data {
+		results = append(results, CommandResult{
+			Command: r.Command,
+			Status:  r.Status,
+			Output:  r.Output,
+			Error:   r.Error,
+		})
+	}
+	return ExecuteCloudCommandResponse{Results: results}, nil
+}
+
 // parseApplyCommandResponse turns a cloud-collector response into an
 // ApplyCommandResponse. The cloud-collector wraps every response (success
 // and failure) in the shape `{"data": {...}, "errors": [{"message": "..."}]}`

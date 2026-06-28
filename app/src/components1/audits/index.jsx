@@ -3,7 +3,7 @@ import { ListingLayout } from '@components1/ds/ListingLayout';
 import FilterDropdown from '@components1/ds/FilterDropdown';
 import CustomDateTimeRangePicker from '@common-new/widgets/CustomDateTimeRangePicker';
 import DownloadButton from '@common-new/DownloadButton';
-import CustomTable2 from '@common-new/tables/CustomTable2';
+import CustomTable2, { ExpandedRowComponent } from '@common-new/tables/CustomTable2';
 import apiAudits from '@api1/audits';
 import Datetime from '@common-new/format/Datetime';
 import Text from '@common-new/format/Text';
@@ -12,6 +12,8 @@ import { getSpecificTime } from '@lib/datetime';
 import CopyButton from '@common-new/CopyButton';
 import capitalize from 'lodash/capitalize';
 import { Box } from '@mui/material';
+import CommandExecutionDetail from '@components1/cloudaccount/CommandExecutionDetail';
+
 import {
   convertToReadableFormat,
   formatUserRoleName,
@@ -24,6 +26,7 @@ import { Link } from '@components1/ds/Link';
 import CodeMirrorDiffViewer from '@components1/common/DiffViewer';
 import { CategoryListing, EventListing } from './common';
 import { toast as snackbar } from '@components1/ds/Toast';
+import WidgetCard from '@components1/ds/WidgetCard';
 
 const headers = [
   'User',
@@ -31,8 +34,8 @@ const headers = [
   'Category/Type',
   { name: 'Action', width: '10%' },
   { name: 'Status', width: '10%' },
-  { name: 'Created At', width: '8%' },
-  'Target',
+  { name: 'Created At', width: '10%' },
+  { name: 'Target', width: '10%' },
 ];
 
 // formatStateForDiff renders a stored state value for the diff viewer.
@@ -61,27 +64,56 @@ const formatStateForDiff = (state) => {
 // left untouched so historical rows stay filterable.
 const normalizeAuditCategory = (category) => ((category || '').toUpperCase() === 'TENANTS' ? 'ACCOUNTS' : category);
 
+const CommandTab = (option, query, _row) => {
+  let attr = {};
+  try {
+    attr = JSON.parse(query.data?.event_attr || '{}') || {};
+  } catch (e) {
+    console.error(e);
+  }
+
+  return (
+    <WidgetCard sx={{ mt: 0 }}>
+      <CommandExecutionDetail commands={Array.isArray(attr.commands) ? attr.commands : []} status={query.data?.event_status} />
+    </WidgetCard>
+  );
+};
+
+const AuditExpandedComponent = ({ row, tabOptions, isExpanded, tabPadding }) => {
+  let isCliExecute = false;
+  for (const cell of row || []) {
+    const eventType = cell?.drilldownQuery?.data?.event_type;
+    if (eventType === 'CLI_EXECUTE') {
+      isCliExecute = true;
+    }
+  }
+  const visibleTabs = (tabOptions || []).filter((tab) => tab.key !== 'audit-command' || isCliExecute);
+  return <ExpandedRowComponent row={row} tabOptions={visibleTabs} isExpanded={isExpanded} tabPadding={tabPadding} />;
+};
+
 const DiffTab = (option, query, _row) => {
   const currentStateString = formatStateForDiff(query.data.event_state);
   const prevStateString = formatStateForDiff(query.data.event_prev_state);
 
   return (
-    <CodeMirrorDiffViewer
-      originalCode={prevStateString}
-      newCode={currentStateString}
-      leftLabel={
-        <>
-          <span style={{ margin: 10, fontWeight: 'var(--ds-font-weight-medium)' }}>Previous State</span>
-          <CopyButton text={prevStateString} />
-        </>
-      }
-      rightLabel={
-        <>
-          <span style={{ margin: 10, fontWeight: 'var(--ds-font-weight-medium)' }}>Current State</span>
-          <CopyButton text={currentStateString} />
-        </>
-      }
-    />
+    <WidgetCard sx={{ mt: 0 }}>
+      <CodeMirrorDiffViewer
+        originalCode={prevStateString}
+        newCode={currentStateString}
+        leftLabel={
+          <>
+            <span style={{ margin: 10, fontWeight: 'var(--ds-font-weight-medium)' }}>Previous State</span>
+            <CopyButton text={prevStateString} />
+          </>
+        }
+        rightLabel={
+          <>
+            <span style={{ margin: 10, fontWeight: 'var(--ds-font-weight-medium)' }}>Current State</span>
+            <CopyButton text={currentStateString} />
+          </>
+        }
+      />
+    </WidgetCard>
   );
 };
 
@@ -97,6 +129,7 @@ export const AuditsTable = () => {
   const [selectedCategoryType, setSelectedCategoryType] = useState('');
   const [selectedAction, setSelectedAction] = useState('');
   const [userFilter, setUserFilter] = useState([]);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [usersMap, setUsersMap] = useState({});
   const [selectedUser, setSelectedUser] = useState('');
   const [accountFilter, setAccountFilter] = useState([]);
@@ -127,6 +160,7 @@ export const AuditsTable = () => {
         users.push({ value: 'SYSTEM', label: 'SYSTEM' });
         setUsersMap(usersMapData);
         setUserFilter(users);
+        setUsersLoaded(true);
       })
       .catch((error) => {
         console.error('Error loading users and accounts:', error);
@@ -359,6 +393,20 @@ export const AuditsTable = () => {
     return <Text value={value} showAutoEllipsis />;
   }
 
+  function getSummaryMessageForExecute(item) {
+    let data = {};
+    try {
+      data = JSON.parse(item?.event_attr) || {};
+    } catch (e) {
+      console.error(e);
+    }
+    const hasRecommendationId = data?.recommendation_id;
+    if (hasRecommendationId) {
+      return <Text value={'Recommendation Applied via Command Execution'} showAutoEllipsis />;
+    }
+    return <Text value={'Cloud Command Executed'} showAutoEllipsis />;
+  }
+
   function getSummaryMessage(item, accountName) {
     if (item.event_action == 'CREATE') {
       return getSummaryMessageForCreate(item);
@@ -366,6 +414,8 @@ export const AuditsTable = () => {
       return getSummaryMessageForUpdate(item, accountName);
     } else if (item.event_action == 'DELETE') {
       return getSummaryMessageForDelete(item);
+    } else if (item.event_action == 'EXECUTE') {
+      return getSummaryMessageForExecute(item);
     }
     return <Text value={''} showAutoEllipsis />;
   }
@@ -384,7 +434,7 @@ export const AuditsTable = () => {
       };
       setData([]);
       setTotalRows(0);
-      if (userFilter.length > 0) {
+      if (usersLoaded) {
         setLoading(true);
         apiAudits
           .listAudits(limit, offset, query)
@@ -491,7 +541,7 @@ export const AuditsTable = () => {
       selectedAccount,
       dateRange.startDate,
       dateRange.endDate,
-      userFilter,
+      usersLoaded,
     ],
     []
   );
@@ -511,7 +561,7 @@ export const AuditsTable = () => {
   const eventTypeOptions = [...EventListing]
     .sort((a, b) => a.localeCompare(b))
     .map((v) => ({ value: v, label: convertToReadableFormat(v.replaceAll('_', ' ')) }));
-  const actionOptions = ['CREATE', 'UPDATE', 'DELETE', 'READ'].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: capitalize(v) }));
+  const actionOptions = ['CREATE', 'UPDATE', 'DELETE', 'READ', 'EXECUTE'].map((v) => ({ value: v, label: capitalize(v) }));
 
   const findOption = (options, value) => (value ? options.find((o) => o.value === value) ?? null : null);
 
@@ -604,12 +654,19 @@ export const AuditsTable = () => {
           totalRows={totalRows}
           showExpandable={true}
           expandable={{
+            component: AuditExpandedComponent,
             tabs: [
               {
                 text: 'Diff State',
                 value: 0,
                 key: 'audit-diff-state',
                 componentFn: DiffTab,
+              },
+              {
+                text: 'Command',
+                value: 1,
+                key: 'audit-command',
+                componentFn: CommandTab,
               },
             ],
           }}

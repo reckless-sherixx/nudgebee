@@ -99,6 +99,7 @@ export const EventListing: string[] = [
   'CUSTOM_TOOL_CREATE',
   'CUSTOM_TOOL_DELETE',
   'CUSTOM_TOOL_UPDATE',
+  'CLI_EXECUTE',
 ];
 
 export const CategoryListing: string[] = [
@@ -126,4 +127,5 @@ export const CategoryListing: string[] = [
   'INTEGRATIONS',
   'AGENT',
   'TOOL',
+  'CLOUD_COMMAND',
 ];

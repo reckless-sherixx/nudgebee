@@ -2008,6 +2008,7 @@ const apiRecommendations = {
       recommendation_resolution: recommendation_resolution_v2(where: $where, limit: $limit, offset: $offset, order_by: [{column: "updated_at", order: desc}]) {
         rows {
           id
+          recommendation_id
           status
           status_message
           resolver_type
@@ -2073,6 +2074,7 @@ const apiRecommendations = {
           recommendation_resolution: rows.map((r: any) => ({
             ...r,
             data: typeof r.data === 'string' ? safeJSONParse(r.data) : r.data,
+            recommendation_id: r.recommendation_id,
             recommendation: {
               recommendation: r.rec_recommendation,
               rule_name: r.rec_rule_name,
