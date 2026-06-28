@@ -208,6 +208,11 @@ const TenantSettings = ({ open, title, onClose }) => {
 
   const handleSaveSettings = async () => {
     setLoading(true);
+    // Success is signalled to the parent (which shows the "saved successfully"
+    // toast) only when every backend op below completes without error. Without
+    // this flag the trailing onClose(..., 'show') fired even on the catch path,
+    // showing a false success on top of the error toast. See issue #32868.
+    let saveSucceeded = false;
     try {
       if (checkboxEnabled && !allowDomainValue.trim()) {
         snackbar.error('Allowed Domains field cannot be empty when domain login is enabled.');
@@ -311,14 +316,19 @@ const TenantSettings = ({ open, title, onClose }) => {
         }
         setTenantName('');
       }
+      saveSucceeded = true;
     } catch (error) {
       snackbar.error(`Error while saving settings - ${parseHttpResponseBodyMessage(error)}`);
     } finally {
-      await getTenantAttributes(true);
+      // Never let a failed refresh skip setLoading(false) — that would leave
+      // the Save button stuck spinning. The refresh is best-effort.
+      await getTenantAttributes(true).catch((e) => console.error('Failed to refresh tenant attributes:', e));
       setLoading(false);
     }
 
-    onClose(null, 'show');
+    if (saveSucceeded) {
+      onClose(null, 'show');
+    }
   };
 
   const handleCheckBoxChange = (featureValue) => {
