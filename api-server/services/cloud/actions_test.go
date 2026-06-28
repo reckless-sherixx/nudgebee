@@ -62,6 +62,7 @@ func TestGCPEnricherGating(t *testing.T) {
 	}
 	logAction := cloudLogAction{}
 	resAction := cloudResourceAction{}
+	metricsAction := cloudMetricsAction{}
 
 	// Cloud Run metric alert: real service_name, NO region -> enrich (region optional).
 	cloudRun := map[string]string{
@@ -103,6 +104,23 @@ func TestGCPEnricherGating(t *testing.T) {
 	}
 	assert.True(t, logAction.CanAutoExecute(ctxWith("GCP_Metric_Alert", logAlert)),
 		"cloud_logs should enrich a native GCP log alert even without region")
+
+	// cloud_metrics: a GCP metric alert (has gcp_event_metric_type, not log-based) should
+	// fetch the metric timeseries even without region (Cloud Monitoring is global).
+	metricAlert := map[string]string{
+		"gcp_account": "full-auth", "gcp_project_id": "full-auth",
+		"gcp_alert_type": "metric", "gcp_service_name": "Cloud Run",
+		"gcp_event_metric_type": "run.googleapis.com/request_count",
+		"gcp_event_instance":    "0.o9xyz", "gcp_incident_id": "0.o9xyz",
+	}
+	assert.True(t, metricsAction.CanAutoExecute(ctxWith("GCP_Metric_Alert", metricAlert)),
+		"cloud_metrics should fetch the metric timeseries for a GCP metric alert without region")
+
+	// cloud_metrics must skip log-based alerts (no metric to chart) and alerts with no metric type.
+	assert.False(t, metricsAction.CanAutoExecute(ctxWith("GCP_Metric_Alert", logAlert)),
+		"cloud_metrics should skip log-based GCP alerts")
+	assert.False(t, metricsAction.CanAutoExecute(ctxWith("GCP_Metric_Alert", cloudRun)),
+		"cloud_metrics should not fire when there is no gcp_event_metric_type")
 }
 
 func TestCloudServiceMap(t *testing.T) {

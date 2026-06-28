@@ -541,8 +541,11 @@ func (a *cloudMetricsAction) CanAutoExecute(ctx playbooks.PlaybookActionContext)
 		}
 	}
 
-	// GCP metrics — skip log-based alerts (no metric to chart)
-	if labels["gcp_alert_type"] != "log" && labels["gcp_region"] != "" && labels["gcp_event_metric_type"] != "" && labels["gcp_event_instance"] != "" {
+	// GCP metrics — Cloud Monitoring is global, so gcp_region is NOT required (regionless
+	// resources like load balancers / App Engine were dropped before). Skip log-based
+	// alerts (no metric to chart); need the alerting metric type. Resource is optional.
+	if labels["gcp_alert_type"] != "log" && labels["gcp_event_metric_type"] != "" &&
+		(labels["gcp_account"] != "" || labels["gcp_project_id"] != "") {
 		return true
 	}
 
@@ -619,17 +622,27 @@ func (a *cloudMetricsAction) AutoExecute(ctx playbooks.PlaybookActionContext) (p
 	// Azure metrics (webhook-based)
 	labels := ctx.GetEvent().Labels
 
-	// Handle GCP
-	if labels["gcp_region"] != "" && labels["gcp_event_metric_type"] != "" {
+	// Handle GCP — Cloud Monitoring is global, so gcp_region is not required.
+	if labels["gcp_alert_type"] != "log" && labels["gcp_event_metric_type"] != "" &&
+		(labels["gcp_account"] != "" || labels["gcp_project_id"] != "") {
+		// gcp_event_instance falls back to the incident ID when the alert carries no
+		// resource-scoped identifier; scoping the metric query by it matches nothing,
+		// so drop it and let the query cover the metric across the resource type.
+		resourceIDs := []string{}
+		titleSuffix := labels["gcp_service_name"]
+		if gcpHasRealResourceInstance(labels) {
+			resourceIDs = []string{labels["gcp_event_instance"]}
+			titleSuffix = labels["gcp_event_instance"]
+		}
 		// Don't pass metric_names or statistics — let cloud-collector auto-discover
 		// all predefined metrics for the service (via gcloudServiceMetricsMap)
 		// with their per-metric statistics config (gcloudMetricsStatsMap).
 		rawParams := map[string]any{
-			"resource_ids":     []string{labels["gcp_event_instance"]},
+			"resource_ids":     resourceIDs,
 			"metric_namespace": labels["gcp_event_metric_type"],
 			"region":           labels["gcp_region"],
 			"service_name":     labels["gcp_service_name"],
-			"title":            "Metrics For - " + labels["gcp_event_instance"],
+			"title":            "Metrics For - " + titleSuffix,
 		}
 
 		// Get cloud account ID

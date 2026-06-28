@@ -1919,6 +1919,13 @@ func RefreshInvestigation(sc *security.RequestContext, eventId string) error {
 
 	newEvidences := []any{}
 	for _, e := range newEvidenceResponse {
+		// An enricher that ran but produced neither a response nor an error has no
+		// evidence to show — skip it instead of persisting an empty placeholder that
+		// renders as a blank card (e.g. cloud_logs with zero matching rows shows up
+		// as an empty "Cloud Logs" card on the investigation view).
+		if e.Response == nil && e.Error == nil {
+			continue
+		}
 		structResponse := map[string]any{}
 		if e.Response == nil {
 			if e.Error != nil {
