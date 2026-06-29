@@ -136,11 +136,29 @@ func (m OpenObserve) ValidateConfig(sc *security.SecurityContext, config []core.
 	if password == "" {
 		errs = append(errs, fmt.Errorf("openobserve_password is required"))
 	}
-	if len(errs) > 0 {
-		return errs
+	return errs
+}
+
+// TestConnection implements core.TestableIntegration to perform live connectivity checks.
+func (m OpenObserve) TestConnection(sc *security.SecurityContext, config []core.IntegrationConfigValue, accountId string) error {
+	var openobserveURL, orgID, username, password string
+	for _, c := range config {
+		switch c.Name {
+		case "openobserve_url":
+			openobserveURL = c.Value
+		case "openobserve_org_id":
+			orgID = c.Value
+		case "openobserve_username":
+			username = c.Value
+		case "openobserve_password":
+			password = c.Value
+		}
 	}
 
-	// Probe the streams endpoint to verify credentials + org.
+	openobserveURL = normalizeOpenObserveURL(strings.TrimSpace(openobserveURL))
+	orgID = strings.TrimSpace(orgID)
+	username = strings.TrimSpace(username)
+
 	resp, err := common.HttpGet(
 		fmt.Sprintf("%s/api/%s/streams", openobserveURL, neturl.PathEscape(orgID)),
 		common.HttpWithHeaders(map[string]string{
@@ -150,7 +168,7 @@ func (m OpenObserve) ValidateConfig(sc *security.SecurityContext, config []core.
 		common.HttpWithTimeout(15*time.Second),
 	)
 	if err != nil {
-		return []error{fmt.Errorf("failed to connect to OpenObserve at %s: %w", openobserveURL, err)}
+		return fmt.Errorf("failed to connect to OpenObserve at %s: %w", openobserveURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -158,13 +176,13 @@ func (m OpenObserve) ValidateConfig(sc *security.SecurityContext, config []core.
 	case http.StatusOK:
 		return nil
 	case http.StatusUnauthorized:
-		return []error{fmt.Errorf("invalid OpenObserve credentials (HTTP 401) — check username and password")}
+		return fmt.Errorf("invalid OpenObserve credentials (HTTP 401) — check username and password")
 	case http.StatusForbidden:
-		return []error{fmt.Errorf("insufficient permissions for OpenObserve (HTTP 403)")}
+		return fmt.Errorf("insufficient permissions for OpenObserve (HTTP 403)")
 	case http.StatusNotFound:
-		return []error{fmt.Errorf("OpenObserve /api/%s/streams not found at %s — check openobserve_url and openobserve_org_id", orgID, openobserveURL)}
+		return fmt.Errorf("OpenObserve /api/%s/streams not found at %s — check openobserve_url and openobserve_org_id", orgID, openobserveURL)
 	default:
-		return []error{fmt.Errorf("OpenObserve API returned unexpected status: HTTP %d", resp.StatusCode)}
+		return fmt.Errorf("OpenObserve API returned unexpected status: HTTP %d", resp.StatusCode)
 	}
 }
 
