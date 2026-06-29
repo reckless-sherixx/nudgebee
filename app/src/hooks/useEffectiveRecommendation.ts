@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { safeParseJSON } from '@components1/optimise-new/utils';
+import { safeParseJSON } from '@components/optimise-new/utils';
 
 export interface AlternateInstanceOption {
   label: string;

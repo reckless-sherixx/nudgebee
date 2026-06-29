@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import apiCloudAccount from '@api1/cloud-account';
-import { snackbar } from '@components1/common/snackbarService';
-import type { ResourceAction } from '@components1/cloudaccount/resourceActions';
+import { snackbar } from '@shared/snackbarService';
+import type { ResourceAction } from '@components/cloudaccount/resourceActions';
 
 interface ActionState {
   isConfirmOpen: boolean;

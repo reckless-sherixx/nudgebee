@@ -1,23 +1,23 @@
 import apiAccount from '@api1/account';
 import apiIntegrations from '@api1/integrations';
-import Text from '@common-new/format/Text';
-import ThreeDotsMenu from '@common-new/ThreeDotsMenu';
-import { ListingLayout } from '@components1/ds/ListingLayout';
-import { Button as DsButton } from '@components1/ds/Button';
-import CloudProviderIcon from '@components1/common/CloudIcon';
-import { Select } from '@components1/ds/Select';
-import { Input } from '@components1/ds/Input';
-import Datetime from '@common-new/format/Datetime';
-import { Modal } from '@components1/ds/Modal';
-import { toast as snackbar } from '@components1/ds/Toast';
-import CustomTable from '@common-new/tables/CustomTable2';
+import Text from '@shared/format/Text';
+import ThreeDotsMenu from '@shared/ds/ThreeDotsMenu';
+import { ListingLayout } from '@ui/ListingLayout';
+import { Button as DsButton } from '@ui/Button';
+import CloudProviderIcon from '@shared/icons/CloudIcon';
+import { Select } from '@ui/Select';
+import { Input } from '@ui/Input';
+import Datetime from '@shared/format/Datetime';
+import { Modal } from '@ui/Modal';
+import { toast as snackbar } from '@ui/Toast';
+import CustomTable from '@shared/tables/CustomTable2';
 import { action } from 'src/utils/actionStyles';
 import { hasWriteAccess, isTenantAdmin } from '@lib/auth';
 import { Typography, Stack, Box } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { colors, ds } from 'src/utils/colors';
 import { safeJSONParse, toKebabCase } from 'src/utils/common';
-import ChannelAccountMapping from '@components1/notifications/ChannelAccountMapping';
+import ChannelAccountMapping from '@components/notifications/ChannelAccountMapping';
 
 const MessagingIntegrationTile = ({
   provider, // "slack" | "google_chat"

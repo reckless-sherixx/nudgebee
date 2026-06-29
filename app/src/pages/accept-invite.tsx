@@ -2,7 +2,7 @@ import * as React from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
-import Loader from '@common/Loader';
+import Loader from '@shared/Loader';
 import cache from '@lib/cache';
 
 /**

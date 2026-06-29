@@ -3,7 +3,7 @@ import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 import { useMediaQuery } from '@mui/material';
-import SafeIcon from '@components1/common/SafeIcon';
+import SafeIcon from '@shared/icons/SafeIcon';
 import { SignInInvestigate, SignInTroubleshoot, SignInWorkflow, SignInOptimize } from '@assets';
 import { useBrandingConfig } from '@hooks/useTenantBranding';
 import { ds } from '@utils/colors';

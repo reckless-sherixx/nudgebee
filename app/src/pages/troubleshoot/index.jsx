@@ -1,16 +1,16 @@
-import KnowledgeGraphServiceMapWrapper from '@components1/KnowledgeGraph';
-import AnchorComponent from '@common-new/AnchorComponent';
-import ErrorBoundary from '@components1/common/ErrorBoundary';
-import KubernetesEventsTable from '@components1/events/KubernetesEvents';
-import KubernetesGroupedEventsTable from '@components1/k8s/details/groupedevents/KubernetesGroupedEventsTable';
-import TroubleshootSummary from '@components1/troubleshoot/TroubleshootSummary';
+import KnowledgeGraphServiceMapWrapper from '@components/KnowledgeGraph';
+import AnchorComponent from '@shared/navigation/AnchorComponent';
+import ErrorBoundary from '@shared/ErrorBoundary';
+import KubernetesEventsTable from '@components/events/KubernetesEvents';
+import KubernetesGroupedEventsTable from '@components/k8s/details/groupedevents/KubernetesGroupedEventsTable';
+import TroubleshootSummary from '@components/troubleshoot/TroubleshootSummary';
 import { Box } from '@mui/material';
 import { useState, useEffect } from 'react';
-import ToggleButtons from '@components1/workflow/NewToggleButtons';
-import AutoInvestigated from '@components1/troubleshoot/AutoInvestigated';
-import ManualInvestigated from '@components1/troubleshoot/ManualInvestigated';
-import EventResolutions from '@components1/troubleshoot/EventResolutions';
-import CustomTabs from '@common-new/CustomTabs';
+import ToggleButtons from '@components/workflow/NewToggleButtons';
+import AutoInvestigated from '@components/troubleshoot/AutoInvestigated';
+import ManualInvestigated from '@components/troubleshoot/ManualInvestigated';
+import EventResolutions from '@components/troubleshoot/EventResolutions';
+import CustomTabs from '@shared/CustomTabs';
 import {
   AllEventsIcon,
   GroupedEventsIcon,
@@ -22,8 +22,8 @@ import {
   RecommendationResolutionIcon,
   ServiceMapsIcon,
 } from '@assets';
-import TriageRulesManager from '@components1/triage/TriageRulesManager';
-import ThresholdSuggestionsManager from '@components1/triage/ThresholdSuggestionsManager';
+import TriageRulesManager from '@components/triage/TriageRulesManager';
+import ThresholdSuggestionsManager from '@components/triage/ThresholdSuggestionsManager';
 import { useRouter } from 'next/router';
 import { hasFeatureAccess } from '@lib/auth';
 

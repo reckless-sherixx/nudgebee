@@ -1,20 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ListingLayout } from '@components1/ds/ListingLayout';
-import { Button as DsButton } from '@components1/ds/Button';
+import { ListingLayout } from '@ui/ListingLayout';
+import { Button as DsButton } from '@ui/Button';
 import { ds } from 'src/utils/colors';
 import k8sApi from '@api1/kubernetes';
-import Text from '@common-new/format/Text';
-import Datetime from '@common-new/format/Datetime';
+import Text from '@shared/format/Text';
+import Datetime from '@shared/format/Datetime';
 import { useRouter } from 'next/router';
 import { Box, Typography, Stack } from '@mui/material';
 import { AgentIconBlue } from '@assets';
-import SafeIcon from '@components1/common/SafeIcon';
+import SafeIcon from '@shared/icons/SafeIcon';
 import { hasWriteAccess } from '@lib/auth';
-import CustomTable from '@common-new/tables/CustomTable2';
+import CustomTable from '@shared/tables/CustomTable2';
 import { useData } from '@context/DataContext';
-import CustomTabs from '@common-new/CustomTabs';
+import CustomTabs from '@shared/CustomTabs';
 import SyncIcon from '@mui/icons-material/Sync';
-import { toast as snackbar } from '@components1/ds/Toast';
+import { toast as snackbar } from '@ui/Toast';
 
 const HEADERS_K8S = ['Status', 'Agent Version', 'Latest Version', 'Last Connected', 'K8s(Provider/Version)'];
 const HEADERS_CLOUD = ['Status', 'Last Connected', 'Cloud', 'Account'];

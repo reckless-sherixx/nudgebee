@@ -8,16 +8,11 @@ const createJestConfig = nextJest({
 const customJestConfig = {
   moduleNameMapper: {
     // Map your custom folders inside src.
-    // Note: DS V2 primitives live in src/component-new/ds/ but are imported via the
-    // @components1/ds/* alias (per tsconfig.json). This more-specific mapper must come
-    // before the catch-all `@components1/*` below — jest.moduleNameMapper is first-match-wins.
-    '^@components1/ds/(.*)$': '<rootDir>/src/component-new/ds/$1',
-    '^@components1/(.*)$': '<rootDir>/src/components1/$1',
+    // @ui/* is the DS primitives alias (src/components/ds). More-specific mappers
+    // come first since jest.moduleNameMapper is first-match-wins.
+    '^@ui/(.*)$': '<rootDir>/src/components/common/ds/$1',
+    '^@shared/(.*)$': '<rootDir>/src/components/common/$1',
     '^@components/(.*)$': '<rootDir>/src/components/$1',
-    '^@ui/(.*)$': '<rootDir>/src/component-new/ds/$1',
-    '^@shared/(.*)$': '<rootDir>/src/components1/common/$1',
-    '^@common/(.*)$': '<rootDir>/src/components1/common/$1',
-    '^@common-new/(.*)$': '<rootDir>/src/component-new/common/$1',
     '^@api1/(.*)$': '<rootDir>/src/api1/$1',
     '^@assets$': '<rootDir>/src/assets/images',
     '^@assets/(.*)$': '<rootDir>/src/assets/images/$1',

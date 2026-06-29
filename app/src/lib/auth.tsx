@@ -1,7 +1,7 @@
 import { useSession } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
 import { queryGraphQL } from '@lib/HttpService';
-import Loader from '@components1/common/Loader';
+import Loader from '@shared/Loader';
 
 // AUTHORIZATION MODEL — front-end vs back-end
 //

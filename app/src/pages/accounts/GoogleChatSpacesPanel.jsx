@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { Box, Stack, Typography, CircularProgress } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import { Button as DsButton } from '@components1/ds/Button';
-import { Label } from '@components1/ds/Label';
-import { Modal } from '@components1/ds/Modal';
+import { Button as DsButton } from '@ui/Button';
+import { Label } from '@ui/Label';
+import { Modal } from '@ui/Modal';
 import apiIntegrations from '@api1/integrations';
 import { isTenantAdmin } from '@lib/auth';
 

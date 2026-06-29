@@ -1,4 +1,4 @@
-import CustomTable from '@common-new/tables/CustomTable2';
+import CustomTable from '@shared/tables/CustomTable2';
 
 export function buildDescriptionMarkdown(details: Record<string, any> | undefined): string {
   if (!details) {
