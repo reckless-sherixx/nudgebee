@@ -1132,6 +1132,16 @@ func (s *WorkflowDao) ListByIntegrationName(ctx context.Context, tenantID, integ
 	// The api-server forwarder always sends the integration row's name on the
 	// URL path, so matching only on params.integration_name silently drops
 	// every legacy subscriber (fan-out returns 200 with fired=0).
+	//
+	// The third branch reconstructs the legacy prefixed name from the row's own
+	// id + the bare params name ("wf-<id>-<params.integration_name>"). This is
+	// the exact shape normalizeWebhookTriggers stores in internal.name for a
+	// legacy row, so it still matches a prefixed URL even when internal.name has
+	// been clobbered back to the bare form — which happens whenever the workflow
+	// is saved from the builder, because the canvas rebuild (extractTriggersFromNodes)
+	// drops the internal-only block and the backend re-derives the bare name.
+	// Without this, editing/publishing a legacy webhook automation permanently
+	// breaks fan-out until the integration binding is repaired by hand.
 	query := `
 		SELECT id::text, account_id::text, name, definition, tags, status, last_execution_status, last_execution_time, created_by, updated_by, created_at, updated_at
 		FROM workflows
@@ -1141,7 +1151,8 @@ func (s *WorkflowDao) ListByIntegrationName(ctx context.Context, tenantID, integ
 			SELECT 1 FROM jsonb_array_elements(definition->'triggers') AS trigger
 			WHERE trigger->>'type' = 'webhook'
 			  AND (trigger->'params'->>'integration_name' = $3
-			       OR trigger->'internal'->>'name' = $3)
+			       OR trigger->'internal'->>'name' = $3
+			       OR ('wf-' || workflows.id::text || '-' || (trigger->'params'->>'integration_name')) = $3)
 		  )
 	`
 	rows, err := s.db.QueryContext(ctx, query, tenantID, model.WorkflowStatusActive, integrationName)
