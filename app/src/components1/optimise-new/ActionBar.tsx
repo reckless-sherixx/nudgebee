@@ -91,6 +91,18 @@ const ActionBar = ({ fullRecommendation: rec, onCreateTicket, onResolve, onCopyC
               Copy Command
             </Button>
           )}
+          {hasAlarmConfig && canWrite && (
+            <Button
+              tone='secondary'
+              size='xs'
+              icon={<NotificationsActiveOutlinedIcon />}
+              iconPlacement='start'
+              onClick={() => setIsAlarmModalOpen(true)}
+              id='action-bar-alarm'
+            >
+              Create Alarm
+            </Button>
+          )}
           <Button
             tone='secondary'
             size='xs'
@@ -128,19 +140,6 @@ const ActionBar = ({ fullRecommendation: rec, onCreateTicket, onResolve, onCopyC
               aria-label={isPVRightSizing ? 'Resize Volume' : 'Scale Down Workload'}
               onClick={handleNavigateToDetail}
               id='action-bar-detail-nav'
-            />
-          )}
-
-          {hasAlarmConfig && canWrite && (
-            <Button
-              tone='ghost'
-              composition='icon-only'
-              size='sm'
-              icon={<NotificationsActiveOutlinedIcon />}
-              tooltip='Create CloudWatch Alarm'
-              aria-label='Create CloudWatch Alarm'
-              onClick={() => setIsAlarmModalOpen(true)}
-              id='action-bar-alarm'
             />
           )}
         </Box>

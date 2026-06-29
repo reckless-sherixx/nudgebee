@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { withErrorBoundary, reportHandledError } from '@common/ErrorBoundary';
-import { colors } from 'src/utils/colors';
+import { colors, ds } from 'src/utils/colors';
 import mermaid from 'mermaid';
 import DownloadIcon from '@assets/download-f.svg';
 import Menu from '@mui/material/Menu';
@@ -205,7 +205,7 @@ const defaultStyles = {
   '& pre': {
     backgroundColor: 'var(--ds-brand-500)',
     color: 'var(--ds-brand-150) !important',
-    padding: 'var(--ds-space-3) var(--ds-space-4) !important',
+    padding: `var(--ds-space-3) ${ds.space.mul(1, 16)} var(--ds-space-3) var(--ds-space-4) !important`,
     borderRadius: 'var(--ds-radius-lg)',
     marginBottom: 'var(--ds-space-4)',
     whiteSpace: 'pre-wrap',

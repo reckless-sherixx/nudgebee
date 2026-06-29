@@ -13,6 +13,11 @@ const customJestConfig = {
     // before the catch-all `@components1/*` below — jest.moduleNameMapper is first-match-wins.
     '^@components1/ds/(.*)$': '<rootDir>/src/component-new/ds/$1',
     '^@components1/(.*)$': '<rootDir>/src/components1/$1',
+    '^@components/(.*)$': '<rootDir>/src/components/$1',
+    '^@ui/(.*)$': '<rootDir>/src/component-new/ds/$1',
+    '^@shared/(.*)$': '<rootDir>/src/components1/common/$1',
+    '^@common/(.*)$': '<rootDir>/src/components1/common/$1',
+    '^@common-new/(.*)$': '<rootDir>/src/component-new/common/$1',
     '^@api1/(.*)$': '<rootDir>/src/api1/$1',
     '^@assets$': '<rootDir>/src/assets/images',
     '^@assets/(.*)$': '<rootDir>/src/assets/images/$1',
