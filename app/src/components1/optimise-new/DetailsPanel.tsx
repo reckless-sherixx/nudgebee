@@ -1,5 +1,7 @@
 import { Box, Typography, Divider, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
 import { useState, useEffect } from 'react';
+import { useEffectiveRecommendation } from '@hooks/useEffectiveRecommendation';
+import { Select as DsSelect } from '@components1/ds/Select';
 import { ds } from 'src/utils/colors';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import DragHandleIcon from '@mui/icons-material/DragHandle';
@@ -11,7 +13,7 @@ import { Label } from '@components1/ds/Label';
 import recommendationApi from '@api1/recommendation';
 import { interpolateMitigations } from '@api1/recommendation/data';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { safeParseJSON, formatRuleName } from './utils';
+import { formatRuleName } from './utils';
 import ApplyMitigationModal from '@components1/cloudaccount/ApplyMitigationModal';
 import { hasWriteAccess } from '@lib/auth';
 

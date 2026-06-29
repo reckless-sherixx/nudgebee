@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { withErrorBoundary, reportHandledError } from '@common/ErrorBoundary';
-import { colors } from 'src/utils/colors';
+import { colors, ds } from 'src/utils/colors';
 import mermaid from 'mermaid';
 import DownloadIcon from '@assets/download-f.svg';
 import Menu from '@mui/material/Menu';
