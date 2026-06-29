@@ -205,6 +205,9 @@ export const getCloudProviderLabel = (cloudProvider: string) => {
     case 'SIGNOZ':
       label = 'Signoz';
       break;
+    case 'OPENOBSERVE':
+      label = 'OpenObserve';
+      break;
     case 'OBSERVE':
       label = 'Observe';
       break;
