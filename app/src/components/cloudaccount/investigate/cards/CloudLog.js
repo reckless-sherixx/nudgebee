@@ -1,8 +1,7 @@
-import CustomTable2 from '@shared/tables/CustomTable2';
 import { titleCase } from '@lib/formatter';
 import LogsIcon from '@assets/investigation/logs-blue.svg';
 import { safeJSONParse } from 'src/utils/common';
-import { getTableData2 } from '@components/k8s/investigate/cards/util';
+import CloudLogViewer from './CloudLogViewer';
 
 class CloudLog {
   constructor(data, _event) {
@@ -13,8 +12,8 @@ class CloudLog {
     this.insightData = [];
     this.renderContent = false;
     this.enricherData = data;
-    this.tableData = {};
-    this.disabled = data?.additional_info?.status == 'skipped';
+    this.logs = [];
+    this.disabled = data?.additional_info?.status === 'skipped';
   }
 
   canRenderContent = async () => {
@@ -22,24 +21,12 @@ class CloudLog {
     const isCloudLogData = ['cloud_logs', 'cloud_gcp_audit_log'].includes(this.enricherData?.additional_info?.action_name);
     if (isCloudLogData) {
       const serverLogParsedData = safeJSONParse(this.enricherData.data);
-      if (serverLogParsedData) {
-        const logsData = serverLogParsedData.data.map(({ timestamp, message }) => ({
-          timestamp,
-          message,
-        }));
-        const { headers, convertedJson2, tableInsight } = getTableData2(logsData, true);
-        this.tableData = {
-          headers: headers,
-          tableData: convertedJson2,
-        };
-        // Merge insights from both evidence and table parsing
-        this.insightData = [];
-        if (this.enricherData?.insight) {
-          this.insightData.push(...this.enricherData.insight);
-        }
-        if (tableInsight) {
-          this.insightData.push(...tableInsight);
-        }
+      if (serverLogParsedData && Array.isArray(serverLogParsedData.data) && serverLogParsedData.data.length > 0) {
+        // Keep the full structured record per entry (timestamp, message, attributes).
+        // GCP request logs (httpRequest entries) carry no textPayload, so their data
+        // lives entirely in `attributes`; the viewer surfaces it generically.
+        this.logs = serverLogParsedData.data;
+        this.insightData = this.enricherData?.insight ? [...this.enricherData.insight] : [];
         this.renderContent = true;
       }
     }
@@ -51,18 +38,7 @@ class CloudLog {
   };
 
   getContentComponents = () => {
-    return [() => this.renderTableData(this.tableData)];
-  };
-
-  renderTableData = (tableData) => {
-    return (
-      <CustomTable2
-        tableData={tableData?.tableData}
-        headers={tableData?.headers}
-        totalRows={tableData?.tableData?.length}
-        rowsPerPage={tableData?.tableData?.length}
-      />
-    );
+    return [() => <CloudLogViewer logs={this.logs} />];
   };
 }
 
