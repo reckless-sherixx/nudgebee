@@ -19,7 +19,7 @@ class CloudLog {
 
   canRenderContent = async () => {
     this.renderContent = false;
-    const isCloudLogData = this.enricherData?.additional_info?.action_name === 'cloud_logs';
+    const isCloudLogData = ['cloud_logs', 'cloud_gcp_audit_log'].includes(this.enricherData?.additional_info?.action_name);
     if (isCloudLogData) {
       const serverLogParsedData = safeJSONParse(this.enricherData.data);
       if (serverLogParsedData) {
