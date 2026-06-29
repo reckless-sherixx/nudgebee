@@ -388,30 +388,40 @@ func enforceWebhookSecrets(wf, existingWf *model.Workflow, workflowID string) er
 	return nil
 }
 
-// webhookTriggerMatchesIntegration reports whether a webhook trigger
-// subscribes to the integration identified by integrationName. Matches on
-// either trigger.params.integration_name (picker flow / new workflows where
-// params and internal are the same string) or trigger.internal.name (legacy
-// workflows where internal carries the `wf-<workflowID>-<name>` prefix while
-// params is the bare name).
+// webhookTriggerMatchesIntegration reports whether a webhook trigger on the
+// workflow identified by workflowID subscribes to the integration identified by
+// integrationName. Matches on:
+//   - trigger.params.integration_name (picker flow / new workflows where params
+//     and internal are the same string), or
+//   - trigger.internal.name (legacy workflows where internal carries the
+//     `wf-<workflowID>-<name>` prefix while params is the bare name), or
+//   - the prefix reconstructed from workflowID + the bare params name
+//     ("wf-<workflowID>-<params.integration_name>"). This last branch matches a
+//     legacy prefixed URL even when internal.name has been clobbered back to the
+//     bare form by a builder save (extractTriggersFromNodes drops internal, so
+//     the backend re-derives the bare name on the next normalize).
 //
 // Must stay aligned with the JSONB predicate in
 // WorkflowDao.ListByIntegrationName — the DAO selects candidate workflows
 // from Postgres; this function picks the matching trigger inside each
-// candidate. If only one side knows about internal.name, fan-out either
-// drops subscribers (DAO too narrow) or wastes ExecuteWorkflow calls on
-// non-matching workflows (loop too narrow).
-func webhookTriggerMatchesIntegration(trigger model.Trigger, integrationName string) bool {
+// candidate. If only one side knows about a branch, fan-out either drops
+// subscribers (DAO too narrow) or wastes ExecuteWorkflow calls on non-matching
+// workflows (loop too narrow).
+func webhookTriggerMatchesIntegration(trigger model.Trigger, workflowID, integrationName string) bool {
 	if trigger.Type != model.WorkflowTriggerWebhook {
 		return false
 	}
 	if integrationName == "" {
 		return false
 	}
-	if paramsName, _ := trigger.Params["integration_name"].(string); paramsName == integrationName {
+	paramsName, _ := trigger.Params["integration_name"].(string)
+	if paramsName == integrationName {
 		return true
 	}
 	if trigger.Internal != nil && trigger.Internal.Name == integrationName {
+		return true
+	}
+	if paramsName != "" && workflowID != "" && "wf-"+workflowID+"-"+paramsName == integrationName {
 		return true
 	}
 	return false
@@ -1138,7 +1148,7 @@ func (s *Service) FanOutWebhookEvent(ctx *security.RequestContext, integrationNa
 			if trigger.Type != model.WorkflowTriggerWebhook {
 				continue
 			}
-			if !webhookTriggerMatchesIntegration(trigger, integrationName) {
+			if !webhookTriggerMatchesIntegration(trigger, wf.ID, integrationName) {
 				continue
 			}
 			matched = true

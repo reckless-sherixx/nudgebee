@@ -1122,7 +1122,7 @@ const Investigate = () => {
             const card = new ResourceCard(d, i);
             if (await card.canRenderContent()) pushCard(card);
           }
-          if (actionType == 'cloud_logs') {
+          if (actionType == 'cloud_logs' || actionType == 'cloud_gcp_audit_log') {
             const card = new CloudLog(d, i);
             if (await card.canRenderContent()) pushCard(card);
           }

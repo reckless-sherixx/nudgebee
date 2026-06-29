@@ -257,11 +257,18 @@ const KubernetesNodesTable = ({ accountId, heading = 'All Nodes' }) => {
                 <>
                   <CustomLabels textTransform={'none'} showShadow text={item.is_active ? 'Active' : 'Deleted'} margin='auto' />
                   <Text
-                    value={item?.meta?.conditions
-                      ?.split(',')
-                      .filter((item) => item.includes('Ready'))
-                      .map((item) => item.replace(':True', ''))
-                      .join(',')}
+                    value={[
+                      (item?.meta?.conditions || '')
+                        .split(',')
+                        .filter((c) => c.includes('Ready'))
+                        .map((c) => c.replace(':True', ''))
+                        .join(','),
+                      // A cordoned node carries the node.kubernetes.io/unschedulable
+                      // taint; surface it as SchedulingDisabled (matches kubectl).
+                      (item?.taints || item?.meta?.taints || '').includes('node.kubernetes.io/unschedulable') ? 'SchedulingDisabled' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
                     sx={{
                       textAlign: 'center',
                     }}

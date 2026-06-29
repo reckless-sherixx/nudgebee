@@ -1229,6 +1229,18 @@ func TestWebhookTriggerMatchesIntegration(t *testing.T) {
 		Internal: &model.TriggerInternal{Name: "wf-fb836ea7-fa0a-4044-a3d2-0375636a43c9-github_ci_webhook"},
 	}
 
+	// Clobbered legacy workflow: a builder save dropped trigger.internal, so the
+	// backend re-derived internal.name back to the bare form. params and internal
+	// are now both bare, but the api-server integration row (and the URL it
+	// forwards) is still the prefixed name. Matching must reconstruct the prefix
+	// from workflowID + the bare params name — otherwise fan-out drops the
+	// subscriber even though the workflow is ACTIVE.
+	clobberedLegacyTrigger := model.Trigger{
+		Type:     model.WorkflowTriggerWebhook,
+		Params:   map[string]any{"integration_name": "github_ci_webhook"},
+		Internal: &model.TriggerInternal{Name: "github_ci_webhook"},
+	}
+
 	// Triggers without internal.name populated yet (newly-created in-memory
 	// objects pre-normalize). Should still match by params.integration_name.
 	preNormalizeTrigger := model.Trigger{
@@ -1241,26 +1253,34 @@ func TestWebhookTriggerMatchesIntegration(t *testing.T) {
 		Params: map[string]any{"integration_name": "my-hook"},
 	}
 
+	const legacyWfID = "fb836ea7-fa0a-4044-a3d2-0375636a43c9"
+
 	cases := []struct {
 		name            string
 		trigger         model.Trigger
+		workflowID      string
 		integrationName string
 		want            bool
 	}{
-		{"picker flow matches", pickerTrigger, "workflowWebhookVK", true},
-		{"picker flow mismatch", pickerTrigger, "something-else", false},
-		{"legacy matches via internal.name", legacyTrigger, "wf-fb836ea7-fa0a-4044-a3d2-0375636a43c9-github_ci_webhook", true},
-		{"legacy matches via params (bare name)", legacyTrigger, "github_ci_webhook", true},
-		{"legacy mismatch", legacyTrigger, "different-integration", false},
-		{"pre-normalize matches by params", preNormalizeTrigger, "my-hook", true},
-		{"pre-normalize mismatch", preNormalizeTrigger, "wf-someid-my-hook", false},
-		{"non-webhook trigger never matches", nonWebhookTrigger, "my-hook", false},
-		{"empty integrationName never matches", pickerTrigger, "", false},
+		{"picker flow matches", pickerTrigger, "any-id", "workflowWebhookVK", true},
+		{"picker flow mismatch", pickerTrigger, "any-id", "something-else", false},
+		{"legacy matches via internal.name", legacyTrigger, legacyWfID, "wf-fb836ea7-fa0a-4044-a3d2-0375636a43c9-github_ci_webhook", true},
+		{"legacy matches via params (bare name)", legacyTrigger, legacyWfID, "github_ci_webhook", true},
+		{"legacy mismatch", legacyTrigger, legacyWfID, "different-integration", false},
+		// The regression this change closes: internal.name clobbered to bare, but
+		// the prefixed URL still matches via the reconstructed wf-<id>- prefix.
+		{"clobbered legacy matches via reconstructed prefix", clobberedLegacyTrigger, legacyWfID, "wf-fb836ea7-fa0a-4044-a3d2-0375636a43c9-github_ci_webhook", true},
+		{"clobbered legacy still matches bare URL", clobberedLegacyTrigger, legacyWfID, "github_ci_webhook", true},
+		{"reconstructed prefix does not match a different workflow's id", clobberedLegacyTrigger, "00000000-0000-0000-0000-000000000000", "wf-fb836ea7-fa0a-4044-a3d2-0375636a43c9-github_ci_webhook", false},
+		{"pre-normalize matches by params", preNormalizeTrigger, "any-id", "my-hook", true},
+		{"pre-normalize mismatch", preNormalizeTrigger, "someid", "wf-someid-other", false},
+		{"non-webhook trigger never matches", nonWebhookTrigger, "any-id", "my-hook", false},
+		{"empty integrationName never matches", pickerTrigger, "any-id", "", false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := webhookTriggerMatchesIntegration(tc.trigger, tc.integrationName)
+			got := webhookTriggerMatchesIntegration(tc.trigger, tc.workflowID, tc.integrationName)
 			assert.Equal(t, tc.want, got)
 		})
 	}

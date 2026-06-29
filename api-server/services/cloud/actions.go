@@ -26,6 +26,7 @@ func init() {
 	playbooks.RegisterAction("cloud_metrics", &cloudMetricsAction{}) // legacy alias — existing playbooks/event rules in DB reference this name
 	playbooks.RegisterAction("cloud_list_metrics", &cloudMetricsAction{})
 	playbooks.RegisterAction("cloud_logs", &cloudLogAction{})
+	playbooks.RegisterAction("cloud_gcp_audit_log", &cloudGCPAuditLogAction{})
 	playbooks.RegisterAction("cloud_service_map", &cloudServiceMapAction{})
 	playbooks.RegisterAction("cloud_performance_insights", &cloudPerformanceInsightsAction{})
 	playbooks.RegisterAction("cloud_azure_activity_log", &cloudAzureActivityLogAction{})
@@ -1583,6 +1584,61 @@ func (a *cloudLogAction) Execute(ctx playbooks.PlaybookActionContext, rawParams 
 	response := playbooks.NewPlaybookActionResponseJson(map[string]any{"data": logoutput}, map[string]any{}, insights, metadata)
 	response.Labels = labels
 	return response, err
+}
+
+// cloudGCPAuditLogAction surfaces recent GCP admin-activity audit events (deploys, config
+// and IAM changes) for the alerting resource's project — the "what changed" signal for
+// availability / error RCA. It reuses the cloud_logs query path against the Cloud Audit
+// Logs *activity* stream, which by definition contains only write/admin operations.
+type cloudGCPAuditLogAction struct {
+	cloudLogAction
+}
+
+func (a *cloudGCPAuditLogAction) CanAutoExecute(ctx playbooks.PlaybookActionContext) bool {
+	labels := ctx.GetEvent().Labels
+	if labels["gcp_project_id"] == "" {
+		return false
+	}
+	// Cloud Run is the common deploy-driven availability case; scope to it so we don't
+	// run an admin-activity query for every GCP resource type.
+	return labels["gcp_event_resource_type"] == "cloud_run_revision" || labels["gcp_service_name"] == "Cloud Run"
+}
+
+func (a *cloudGCPAuditLogAction) AutoExecute(ctx playbooks.PlaybookActionContext) (playbooks.PlaybookActionResponse, error) {
+	labels := ctx.GetEvent().Labels
+	project := labels["gcp_project_id"]
+	if project == "" {
+		return nil, nil
+	}
+
+	rawParams := map[string]any{
+		// Cloud Audit "activity" log = admin/write operations only (deploys, IAM, deletes).
+		// %2F is the URL-encoded slash the Cloud Logging filter expects in the log name.
+		"log_group_name": fmt.Sprintf("projects/%s/logs/cloudaudit.googleapis.com%%2Factivity", project),
+		"query_string":   `protoPayload.serviceName="run.googleapis.com"`,
+		"title":          "Recent Changes & Deployments",
+		// Audit logs are project-scoped (region unused here); pass it through for params
+		// completeness — may be empty/global for GCP.
+		"region": labels["gcp_region"],
+	}
+
+	// Look back before the incident so a deploy that caused it is in-window (the inherited
+	// Execute otherwise scopes the query to the incident's own [start, end]).
+	if started := ctx.GetEvent().StartedAt; started != nil {
+		lookback := started.Add(-2 * time.Hour)
+		rawParams["start_time"] = &lookback
+	}
+
+	if labels["gcp_account"] != "" {
+		if accountId, err := getCloudAccountIdByNumber(labels["gcp_account"], ctx.GetTenantId()); err == nil {
+			rawParams["account_id"] = accountId
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			ctx.GetLogger().Warn("cloud_gcp_audit_log: could not find cloud account",
+				"account_number", labels["gcp_account"], "error", err)
+		}
+	}
+
+	return a.Execute(ctx, rawParams)
 }
 
 func actionLogExtractErrorPatterns(logs []map[string]any, maxErrors int) []playbooks.PlaybookActionResponseInsight {

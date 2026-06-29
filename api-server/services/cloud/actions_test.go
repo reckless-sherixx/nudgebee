@@ -257,3 +257,26 @@ func TestCloudPerformanceInsightsCanAutoExecute_StandardRDSAlarm(t *testing.T) {
 		t.Logf("Performance Insights AutoExecute for standard alarm response: %+v", response)
 	}
 }
+
+// TestCloudGCPAuditLogGating covers the deploy/change enricher gate: fires for GCP Cloud
+// Run events with a project, skips other GCP resources and project-less events.
+func TestCloudGCPAuditLogGating(t *testing.T) {
+	ctxWith := func(labels map[string]string) playbooks.PlaybookActionContext {
+		return playbooks.NewPlaybookActionContext("t", "a", slog.Default(),
+			playbooks.PlaybookEvent{Source: "GCP_Metric_Alert", Labels: labels})
+	}
+	audit := cloudGCPAuditLogAction{}
+
+	assert.True(t, audit.CanAutoExecute(ctxWith(map[string]string{
+		"gcp_project_id": "full-auth", "gcp_event_resource_type": "cloud_run_revision",
+	})), "Cloud Run event (by resource type) should fetch recent changes")
+	assert.True(t, audit.CanAutoExecute(ctxWith(map[string]string{
+		"gcp_project_id": "full-auth", "gcp_service_name": "Cloud Run",
+	})), "Cloud Run event (by service name) should fetch recent changes")
+	assert.False(t, audit.CanAutoExecute(ctxWith(map[string]string{
+		"gcp_project_id": "full-auth", "gcp_event_resource_type": "cloudsql_database",
+	})), "non-Cloud-Run GCP resource should not run the run.googleapis.com audit query")
+	assert.False(t, audit.CanAutoExecute(ctxWith(map[string]string{
+		"gcp_service_name": "Cloud Run",
+	})), "no project -> skip")
+}
