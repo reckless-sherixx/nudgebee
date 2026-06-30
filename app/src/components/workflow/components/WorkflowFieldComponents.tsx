@@ -3,19 +3,14 @@ import {
   Box,
   Typography,
   TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  Chip,
-  Switch,
-  FormControlLabel,
-  ToggleButtonGroup,
-  ToggleButton,
-  Autocomplete,
 } from '@mui/material';
 import { Add, Delete, DragIndicator, Visibility, VisibilityOff, ExpandMore, ExpandLess, Code, ViewList } from '@mui/icons-material';
 import { Input } from '@ui/Input';
 import CollapsableCard from '@ui/CollapsableCard';
+import { Select as DsSelect } from '@ui/Select';
+import { Chip as DsChip } from '@ui/Chip';
+import { Switch as DsSwitch } from '@ui/Switch';
+import { ToggleGroup } from '@ui/ToggleGroup';
 import TemplateTextField from './TemplateTextField';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -376,7 +371,7 @@ export const ArrayEditor: React.FC<ArrayEditorProps> = ({
               Item {index + 1}
             </Typography>
             {configuredCount > 0 && (
-              <Chip label={`${configuredCount} fields`} size='small' variant='outlined' sx={{ height: '18px', fontSize: 'var(--ds-text-caption)' }} />
+              <DsChip size='xs' tone='neutral'>{`${configuredCount} fields`}</DsChip>
             )}
             {isExpanded ? (
               <ExpandLess sx={{ fontSize: 18, color: 'var(--ds-gray-600)', ml: 'auto' }} />
@@ -425,22 +420,19 @@ export const ArrayEditor: React.FC<ArrayEditorProps> = ({
 
     // Boolean type
     if (fieldSchema.type === 'boolean') {
-      return <Switch checked={fieldValue === true || fieldValue === 'true'} onChange={(e) => onFieldChange(e.target.checked)} size='small' />;
+      return <DsSwitch checked={fieldValue === true || fieldValue === 'true'} onChange={(_e, checked) => onFieldChange(checked)} size='sm' />;
     }
 
     // Options/enum - render dropdown
     if (options && options.length > 0) {
       return (
-        <Select size='small' fullWidth value={fieldValue ?? fieldSchema.default ?? ''} onChange={(e) => onFieldChange(e.target.value)} displayEmpty>
-          <MenuItem value=''>
-            <em>Select {fieldSchema.title || fieldName}</em>
-          </MenuItem>
-          {options.map((option) => (
-            <MenuItem key={option} value={option}>
-              {option}
-            </MenuItem>
-          ))}
-        </Select>
+        <DsSelect
+          size='sm'
+          value={fieldValue ?? fieldSchema.default ?? ''}
+          onChange={(next) => onFieldChange(next)}
+          placeholder={`Select ${fieldSchema.title || fieldName}`}
+          options={options}
+        />
       );
     }
 
@@ -475,35 +467,13 @@ export const ArrayEditor: React.FC<ArrayEditorProps> = ({
       return (
         <Box>
           {hasSuggestions ? (
-            <Autocomplete
-              freeSolo
-              options={suggestedValues!}
+            <DsSelect
+              searchable
+              size='sm'
               value={stringVal}
-              onChange={(_, newValue) => {
-                const normalizedValue = typeof newValue === 'object' && newValue !== null ? (newValue as any).value : newValue;
-                onFieldChange(normalizedValue ?? '');
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  size='small'
-                  placeholder='Select or enter value'
-                  inputProps={{
-                    ...params.inputProps,
-                    onBlur: (e: any) => {
-                      params.inputProps.onBlur?.(e);
-                      onFieldChange(e.target.value);
-                    },
-                  }}
-                  sx={{
-                    '& .MuiInputBase-root': {
-                      backgroundColor: 'var(--ds-background-100)',
-                      fontSize: 'var(--ds-text-body)',
-                      borderRadius: 'var(--ds-radius-md)',
-                    },
-                  }}
-                />
-              )}
+              onChange={(next) => onFieldChange(next)}
+              placeholder='Select or enter value'
+              options={suggestedValues!}
             />
           ) : (
             <Input
@@ -797,27 +767,14 @@ export const DurationInput: React.FC<DurationInputProps> = ({ value, onChange, e
             size='sm'
           />
         </Box>
-        <FormControl size='small' sx={{ minWidth: '100px' }}>
-          <Select
-            value={unit}
-            onChange={(e) => handleUnitChange(e.target.value)}
-            disabled={disabled}
-            sx={{
-              borderRadius: 'var(--ds-radius-md)',
-              backgroundColor: 'white',
-              fontSize: 'var(--ds-text-body-lg)',
-              '& fieldset': {
-                borderColor: 'var(--ds-brand-200)',
-              },
-            }}
-          >
-            {DURATION_UNITS.map((u) => (
-              <MenuItem key={u.value} value={u.value}>
-                {u.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <DsSelect
+          size='sm'
+          value={unit}
+          onChange={(next) => handleUnitChange(next)}
+          disabled={disabled}
+          options={DURATION_UNITS.map((u) => ({ value: u.value, label: u.label }))}
+          minWidth='100px'
+        />
       </Box>
       {error && (
         <Typography variant='body2' sx={{ color: 'var(--ds-red-500)', fontSize: 'var(--ds-text-small)', mt: 0.5 }}>
@@ -1059,21 +1016,16 @@ export const MultiSelectChips: React.FC<MultiSelectChipsProps> = ({
         }}
       >
         {options.map((option) => (
-          <Chip
+          <DsChip
             key={option}
-            label={option}
             onClick={() => !disabled && handleToggle(option)}
-            color={value.includes(option) ? 'primary' : 'default'}
-            variant={value.includes(option) ? 'filled' : 'outlined'}
-            size='small'
-            disabled={disabled}
-            sx={{
-              cursor: disabled ? 'default' : 'pointer',
-              '&:hover': {
-                backgroundColor: value.includes(option) ? undefined : 'var(--ds-brand-150)',
-              },
-            }}
-          />
+            variant='filter'
+            tone={value.includes(option) ? 'info' : 'neutral'}
+            selected={value.includes(option)}
+            size='sm'
+          >
+            {option}
+          </DsChip>
         ))}
         {options.length === 0 && (
           <Typography variant='body2' sx={{ color: 'var(--ds-gray-400)', fontSize: 'var(--ds-text-body)' }}>
@@ -1223,17 +1175,11 @@ export const NestedSchemaEditor: React.FC<NestedSchemaEditorProps> = ({
     // Boolean type - render Switch
     if (fieldSchema.type === 'boolean') {
       return (
-        <FormControlLabel
-          control={
-            <Switch
-              checked={fieldValue === true || fieldValue === 'true'}
-              onChange={(e) => handleFieldChange(fieldName, e.target.checked)}
-              disabled={disabled}
-              size='small'
-            />
-          }
-          label=''
-          sx={{ ml: 0 }}
+        <DsSwitch
+          checked={fieldValue === true || fieldValue === 'true'}
+          onChange={(_e, checked) => handleFieldChange(fieldName, checked)}
+          disabled={disabled}
+          size='sm'
         />
       );
     }
@@ -1323,23 +1269,14 @@ export const NestedSchemaEditor: React.FC<NestedSchemaEditorProps> = ({
     // Options/enum - render dropdown
     if (options && options.length > 0) {
       return (
-        <Select
-          size='small'
-          fullWidth
+        <DsSelect
+          size='sm'
           value={fieldValue ?? fieldSchema.default ?? ''}
-          onChange={(e) => handleFieldChange(fieldName, e.target.value)}
+          onChange={(next) => handleFieldChange(fieldName, next)}
           disabled={disabled}
-          displayEmpty
-        >
-          <MenuItem value=''>
-            <em>Select {fieldSchema.title || fieldName}</em>
-          </MenuItem>
-          {options.map((option) => (
-            <MenuItem key={option} value={option}>
-              {option}
-            </MenuItem>
-          ))}
-        </Select>
+          placeholder={`Select ${fieldSchema.title || fieldName}`}
+          options={options}
+        />
       );
     }
 
@@ -1427,13 +1364,9 @@ export const NestedSchemaEditor: React.FC<NestedSchemaEditorProps> = ({
         }
         meta={
           configuredCount > 0 ? (
-            <Chip
-              label={`${configuredCount} configured`}
-              size='small'
-              color='primary'
-              variant='outlined'
-              sx={{ height: '20px', fontSize: 'var(--ds-text-caption)' }}
-            />
+            <DsChip size='xs' tone='info'>
+              {`${configuredCount} configured`}
+            </DsChip>
           ) : undefined
         }
         sx={error ? { border: '1px solid var(--ds-red-500)' } : undefined}
@@ -1554,46 +1487,16 @@ export const KeyValueHybridField: React.FC<KeyValueHybridFieldProps> = ({
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
-        <ToggleButtonGroup value={mode} exclusive onChange={handleModeChange} size='small' disabled={disabled}>
-          <ToggleButton
-            value='keyvalue'
-            sx={{
-              px: 1.5,
-              py: 0.25,
-              fontSize: 'var(--ds-text-caption)',
-              textTransform: 'none',
-              borderColor: 'var(--ds-gray-300)',
-              '&.Mui-selected': {
-                backgroundColor: 'var(--ds-blue-200)',
-                color: 'var(--ds-purple-600)',
-                borderColor: 'var(--ds-brand-200)',
-                '&:hover': { backgroundColor: 'var(--ds-brand-200)' },
-              },
-            }}
-          >
-            <ViewList sx={{ fontSize: 14, mr: 0.5 }} />
-            Key / Value
-          </ToggleButton>
-          <ToggleButton
-            value='expression'
-            sx={{
-              px: 1.5,
-              py: 0.25,
-              fontSize: 'var(--ds-text-caption)',
-              textTransform: 'none',
-              borderColor: 'var(--ds-gray-300)',
-              '&.Mui-selected': {
-                backgroundColor: 'var(--ds-red-100)',
-                color: 'var(--ds-red-600)',
-                borderColor: 'var(--ds-red-300)',
-                '&:hover': { backgroundColor: 'var(--ds-red-200)' },
-              },
-            }}
-          >
-            <Code sx={{ fontSize: 14, mr: 0.5 }} />
-            {'{{ }} Expression'}
-          </ToggleButton>
-        </ToggleButtonGroup>
+        <ToggleGroup
+          selection='single'
+          value={mode}
+          onChange={(next) => handleModeChange(null as any, next as KeyValueFieldMode)}
+          size='sm'
+          options={[
+            { value: 'keyvalue', label: 'Key / Value', icon: <ViewList sx={{ fontSize: 14 }} /> },
+            { value: 'expression', label: '{{ }} Expression', icon: <Code sx={{ fontSize: 14 }} /> },
+          ]}
+        />
       </Box>
 
       {mode === 'keyvalue' ? (
