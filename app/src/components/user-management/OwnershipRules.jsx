@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Box } from '@mui/material';
 import { ListingLayout } from '@ui/ListingLayout';
-import CustomTable from '@shared/tables/CustomTable';
+import CustomTable from '@shared/tables/CustomTable2';
 import { Button as DsButton } from '@ui/Button';
 import { Chip } from '@ui/Chip';
 import { Switch } from '@ui/Switch';
