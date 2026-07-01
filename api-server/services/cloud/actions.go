@@ -1272,6 +1272,15 @@ func (a *cloudLogAction) CanAutoExecute(ctx playbooks.PlaybookActionContext) boo
 		if resourceType != "" && resourceType != "unknown" {
 			return true
 		}
+		// Native log alerts and log-based metric alerts self-scope via the alert
+		// definition; no monitored resource is required. TestGCPEnricherGating
+		// documents this contract.
+		if labels["gcp_alert_type"] == "log" {
+			return true
+		}
+		if strings.HasPrefix(labels["gcp_metric_type"], "logging.googleapis.com/") {
+			return true
+		}
 	}
 
 	return false
