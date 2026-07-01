@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"nudgebee/collector/cloud/config"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/wagslane/go-rabbitmq"
 )
 
@@ -23,6 +26,24 @@ var (
 	maxAttempts        = 3
 	reconnectTimeDelay = 5 * time.Second
 )
+
+// MQ heartbeat: a message is round-tripped through the shared RabbitMQ connection
+// on a fixed interval. If the round-trip stops (e.g. the go-rabbitmq consumer
+// wedges after a broker restart — it can silently stop reconnecting on a nil-error
+// channel close), MqHealthy() starts returning false and the Kubernetes liveness
+// probe restarts the pod, which rebuilds every consumer/publisher from scratch.
+const (
+	mqHeartbeatInterval = 30 * time.Second
+	mqHeartbeatTimeout  = 120 * time.Second
+	mqHeartbeatExchange = "cloud_collector_mq_heartbeat_exchange"
+	mqHeartbeatQueue    = "cloud_collector_mq_heartbeat"
+	mqHeartbeatKey      = "heartbeat"
+)
+
+// mqLastHeartbeatNanos holds the unix-nano timestamp of the last heartbeat that
+// completed the publish -> broker -> consume round-trip. Zero means the heartbeat
+// has not been started yet (boot grace period).
+var mqLastHeartbeatNanos atomic.Int64
 
 // slogRbmqLogger adapts slog to the go-rabbitmq Logger interface so that
 // library-internal log lines are emitted as structured JSON instead of
@@ -132,6 +153,42 @@ func isRabbitMQConnectionError(err error) bool {
 		(strings.HasPrefix(errStr, "amqp:") && (strings.Contains(errStr, "channel error") || strings.Contains(errStr, "connection error") || strings.Contains(errStr, "command invalid")))
 }
 
+// isQueueDurabilityMismatch reports whether err is a RabbitMQ PRECONDITION_FAILED
+// raised because an existing queue's durable flag differs from what we declared.
+func isQueueDurabilityMismatch(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := strings.ToLower(err.Error())
+	return strings.Contains(e, "precondition_failed") && strings.Contains(e, "durable")
+}
+
+// deleteQueueForMigration deletes a queue using a short-lived raw AMQP connection.
+// Used only to migrate a legacy non-durable queue so it can be recreated as durable.
+// A separate connection is used so the shared connection / other consumers are
+// unaffected by the channel-level exception a delete can raise.
+func deleteQueueForMigration(queue string) error {
+	// Build the URL via net/url so credentials with special characters
+	// (@, :, /, ?) are escaped correctly.
+	u := &url.URL{
+		Scheme: "amqp",
+		User:   url.UserPassword(config.Config.RabbitMqUsername, config.Config.RabbitMqPassword),
+		Host:   fmt.Sprintf("%s:%d", config.Config.RabbitMqHost, config.Config.RabbitMqPort),
+	}
+	conn, err := amqp.Dial(u.String())
+	if err != nil {
+		return fmt.Errorf("migration dial: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("migration channel: %w", err)
+	}
+	defer func() { _ = ch.Close() }()
+	_, err = ch.QueueDelete(queue, false /* ifUnused */, false /* ifEmpty */, false /* noWait */)
+	return err
+}
+
 func MqClose() {
 	rbmqConsumersMux.Lock()
 	for _, consumer := range rbmqConsumers {
@@ -209,10 +266,26 @@ func MqConsume(exchangeName string, routingKey string, queue string, concurrency
 				rabbitmq.WithConsumerOptionsExchangeDeclare,
 				rabbitmq.WithConsumerOptionsConcurrency(concurrency),
 				rabbitmq.WithConsumerOptionsExchangeDurable,
+				// Durable queue: survives a broker restart so jobs are not silently
+				// dropped while the consumer is briefly disconnected.
+				rabbitmq.WithConsumerOptionsQueueDurable,
 				rabbitmq.WithConsumerOptionsLogger(rbmqLogger),
 				rabbitmq.WithConsumerOptionsConsumerName(config.Config.OtelServiceName+"/"+routingKey+"/"+config.SERVICE_NAME),
 			)
 			if err != nil {
+				// One-time migration: a queue that already exists as non-durable (from
+				// before this change) cannot be re-declared as durable — RabbitMQ rejects
+				// it with PRECONDITION_FAILED. Delete the legacy queue so the next attempt
+				// recreates it as durable. The queue is non-durable, so it (and any
+				// messages in it) would be lost on the next broker restart anyway.
+				if isQueueDurabilityMismatch(err) {
+					slog.Warn("rbmq: queue durability mismatch, deleting legacy non-durable queue for migration", "queue", queue, "error", err)
+					if delErr := deleteQueueForMigration(queue); delErr != nil {
+						slog.Error("rbmq: failed to delete legacy queue during durability migration", "queue", queue, "error", delErr)
+					} else {
+						slog.Info("rbmq: deleted legacy non-durable queue, will recreate as durable", "queue", queue)
+					}
+				}
 				slog.Error("rbmq: error creating consumer", "error", err, "queue", queue, "attempt", attempt+1)
 				continue
 			}
@@ -399,6 +472,39 @@ func processMessageAndDetermineAction(d rabbitmq.Delivery, processorFunc func(da
 // republishWithDelay republishes a message with updated headers and a per-message TTL
 // to create a delayed retry. The message is published with an expiration so RabbitMQ
 // holds it before making it available for consumption again.
+// newManagedPublisher creates a publisher in confirm mode and registers handlers
+// that surface two otherwise-silent failure modes:
+//   - NotifyReturn: a message published with the mandatory flag that no queue is
+//     bound to is returned by the broker and dropped (this is exactly what happened
+//     when the cost-report queue/consumer was dead — publishes reported success
+//     while every message was discarded).
+//   - NotifyPublish: a publish the broker negatively acknowledges (not persisted).
+func newManagedPublisher(conn *rabbitmq.Conn, exchangeName string) (*rabbitmq.Publisher, error) {
+	publisher, err := rabbitmq.NewPublisher(
+		conn,
+		rabbitmq.WithPublisherOptionsLogger(rbmqLogger),
+		rabbitmq.WithPublisherOptionsExchangeName(exchangeName),
+		rabbitmq.WithPublisherOptionsExchangeDeclare,
+		rabbitmq.WithPublisherOptionsExchangeDurable,
+		rabbitmq.WithPublisherOptionsConfirm,
+	)
+	if err != nil {
+		return nil, err
+	}
+	publisher.NotifyReturn(func(r rabbitmq.Return) {
+		slog.Error("rbmq: message returned as unroutable and dropped (no bound queue?)",
+			"exchange", r.Exchange, "routing_key", r.RoutingKey,
+			"reply_code", r.ReplyCode, "reply_text", r.ReplyText)
+	})
+	publisher.NotifyPublish(func(c rabbitmq.Confirmation) {
+		if !c.Ack {
+			slog.Error("rbmq: publish was nacked by broker (not persisted)",
+				"exchange", exchangeName, "delivery_tag", c.DeliveryTag)
+		}
+	})
+	return publisher, nil
+}
+
 func republishWithDelay(exchangeName string, routingKey string, body []byte, headers map[string]any) error {
 	retryCount := getRetryCount(headers)
 	// Exponential backoff: 10s, 20s, 40s
@@ -412,13 +518,7 @@ func republishWithDelay(exchangeName string, routingKey string, body []byte, hea
 		return ErrRbmqNoConn
 	}
 
-	publisher, err := rabbitmq.NewPublisher(
-		conn,
-		rabbitmq.WithPublisherOptionsLogger(rbmqLogger),
-		rabbitmq.WithPublisherOptionsExchangeName(exchangeName),
-		rabbitmq.WithPublisherOptionsExchangeDeclare,
-		rabbitmq.WithPublisherOptionsExchangeDurable,
-	)
+	publisher, err := newManagedPublisher(conn, exchangeName)
 	if err != nil {
 		return fmt.Errorf("republish: failed to create publisher: %w", err)
 	}
@@ -430,6 +530,7 @@ func republishWithDelay(exchangeName string, routingKey string, body []byte, hea
 		rabbitmq.WithPublishOptionsContentType("application/json"),
 		rabbitmq.WithPublishOptionsExchange(exchangeName),
 		rabbitmq.WithPublishOptionsHeaders(headers),
+		rabbitmq.WithPublishOptionsPersistentDelivery,
 		rabbitmq.WithPublishOptionsExpiration(fmt.Sprintf("%d", delaySec*1000)),
 	)
 }
@@ -442,13 +543,7 @@ func republishDirect(exchangeName string, routingKey string, body []byte, header
 		return ErrRbmqNoConn
 	}
 
-	publisher, err := rabbitmq.NewPublisher(
-		conn,
-		rabbitmq.WithPublisherOptionsLogger(rbmqLogger),
-		rabbitmq.WithPublisherOptionsExchangeName(exchangeName),
-		rabbitmq.WithPublisherOptionsExchangeDeclare,
-		rabbitmq.WithPublisherOptionsExchangeDurable,
-	)
+	publisher, err := newManagedPublisher(conn, exchangeName)
 	if err != nil {
 		return fmt.Errorf("republishDirect: failed to create publisher: %w", err)
 	}
@@ -460,6 +555,7 @@ func republishDirect(exchangeName string, routingKey string, body []byte, header
 		rabbitmq.WithPublishOptionsContentType("application/json"),
 		rabbitmq.WithPublishOptionsExchange(exchangeName),
 		rabbitmq.WithPublishOptionsHeaders(headers),
+		rabbitmq.WithPublishOptionsPersistentDelivery,
 	)
 }
 
@@ -499,6 +595,49 @@ func publishToPoisonDLQ(exchangeName string, queueName string, body []byte, orig
 	}
 }
 
+// MqDeclareDLQ declares a durable dead-letter exchange and queue and binds them
+// together (routing key == queue name). DLQ targets are published to via MqPublish
+// (see sendToDLQWithConfig / publishToPoisonDLQ), which declares only the exchange.
+// RabbitMQ silently discards messages published to an exchange with no bound queue,
+// so without this declaration DLQ messages are lost. Call once at consumer startup.
+// The declaration is idempotent: re-declaring with the same parameters is a no-op.
+func MqDeclareDLQ(exchangeName string, queueName string) error {
+	if exchangeName == "" || queueName == "" {
+		slog.Warn("rbmq: DLQ not configured, skipping DLQ declaration", "dlq_exchange", exchangeName, "dlq_queue", queueName)
+		return nil
+	}
+
+	url := fmt.Sprintf("amqp://%s:%s@%s:%d", config.Config.RabbitMqUsername, config.Config.RabbitMqPassword, config.Config.RabbitMqHost, config.Config.RabbitMqPort)
+	// Use a bounded dial timeout so a slow/unreachable broker can't hang consumer startup.
+	conn, err := amqp.DialConfig(url, amqp.Config{Dial: amqp.DefaultDial(10 * time.Second)})
+	if err != nil {
+		return fmt.Errorf("rbmq: dlq dial failed: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("rbmq: dlq channel open failed: %w", err)
+	}
+	defer func() { _ = ch.Close() }()
+
+	// Durable direct exchange to match how MqPublish declares exchanges.
+	if err := ch.ExchangeDeclare(exchangeName, amqp.ExchangeDirect, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("rbmq: dlq exchange declare failed: %w", err)
+	}
+	if _, err := ch.QueueDeclare(queueName, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("rbmq: dlq queue declare failed: %w", err)
+	}
+	// Bind with routing key == queue name, matching the routing key used by
+	// sendToDLQWithConfig / publishToPoisonDLQ when publishing to the DLQ.
+	if err := ch.QueueBind(queueName, queueName, exchangeName, false, nil); err != nil {
+		return fmt.Errorf("rbmq: dlq queue bind failed: %w", err)
+	}
+
+	slog.Info("rbmq: dead-letter queue declared and bound", "dlq_exchange", exchangeName, "dlq_queue", queueName)
+	return nil
+}
+
 func MqPublish(exchangeName string, routingKey string, message any, opts ...MqPublishOption) error {
 	options := mqPublishOptions{}
 	for _, opt := range opts {
@@ -529,6 +668,11 @@ func MqPublish(exchangeName string, routingKey string, message any, opts ...MqPu
 		rabbitmq.WithPublishOptionsContentType("application/json"),
 		rabbitmq.WithPublishOptionsExchange(exchangeName),
 		rabbitmq.WithPublishOptionsHeaders(headers),
+		// Persist messages to disk so they survive a broker restart, and mark
+		// mandatory so an unroutable publish is returned (and logged) instead of
+		// being silently discarded by the broker.
+		rabbitmq.WithPublishOptionsPersistentDelivery,
+		rabbitmq.WithPublishOptionsMandatory,
 	}
 	if options.Expiration > 0 {
 		publishOptsList = append(publishOptsList, rabbitmq.WithPublishOptionsExpiration(fmt.Sprintf("%d", options.Expiration.Milliseconds())))
@@ -559,13 +703,7 @@ func MqPublish(exchangeName string, routingKey string, message any, opts ...MqPu
 				break // Max attempts reached for getting connection
 			}
 
-			newP, pubErr := rabbitmq.NewPublisher(
-				conn,
-				rabbitmq.WithPublisherOptionsLogger(rbmqLogger),
-				rabbitmq.WithPublisherOptionsExchangeName(exchangeName),
-				rabbitmq.WithPublisherOptionsExchangeDeclare,
-				rabbitmq.WithPublisherOptionsExchangeDurable,
-			)
+			newP, pubErr := newManagedPublisher(conn, exchangeName)
 			if pubErr != nil {
 				lastErr = fmt.Errorf("rbmq: error creating publisher on attempt %d: %w", attempt+1, pubErr)
 				slog.Error("rbmq: error creating publisher", "attempt", attempt+1, "key", publisherKey, "error", pubErr)
@@ -637,4 +775,48 @@ func MqPublish(exchangeName string, routingKey string, message any, opts ...MqPu
 
 	slog.Error("rbmq: failed to publish message after max attempts", "key", publisherKey, "error", lastErr)
 	return lastErr
+}
+
+// MqHealthy reports whether the MQ heartbeat has completed a publish -> broker ->
+// consume round-trip recently. It returns true during the boot grace period
+// (before the first heartbeat) so a slow startup does not trip the liveness probe.
+// Once heartbeats have started, a stale heartbeat (older than mqHeartbeatTimeout)
+// means a consumer or the connection has wedged and the pod should be restarted.
+func MqHealthy() bool {
+	last := mqLastHeartbeatNanos.Load()
+	if last == 0 {
+		return true
+	}
+	return time.Since(time.Unix(0, last)) < mqHeartbeatTimeout
+}
+
+// StartMqHeartbeat starts the heartbeat consumer and publisher. It is safe to call
+// once at startup. The consumer records the time of each received heartbeat; the
+// publisher emits one on mqHeartbeatInterval. If the round-trip stops, MqHealthy()
+// goes false and the Kubernetes liveness probe restarts the pod.
+func StartMqHeartbeat() {
+	// Seed with the current time so the boot grace period is exactly one timeout
+	// window, after which a missing round-trip is treated as unhealthy.
+	mqLastHeartbeatNanos.Store(time.Now().UnixNano())
+
+	err := MqConsume(mqHeartbeatExchange, mqHeartbeatKey, mqHeartbeatQueue, 1, func(_ []byte) error {
+		mqLastHeartbeatNanos.Store(time.Now().UnixNano())
+		return nil
+	})
+	if err != nil {
+		slog.Error("rbmq: failed to start heartbeat consumer", "error", err)
+	}
+
+	go func() {
+		ticker := time.NewTicker(mqHeartbeatInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			// Expire heartbeats so they never accumulate if the consumer is wedged.
+			if pubErr := MqPublish(mqHeartbeatExchange, mqHeartbeatKey, "ping", MqPublishWithExpiration(mqHeartbeatTimeout)); pubErr != nil {
+				slog.Warn("rbmq: heartbeat publish failed", "error", pubErr)
+			}
+		}
+	}()
+
+	slog.Info("rbmq: MQ heartbeat started", "interval", mqHeartbeatInterval.String(), "timeout", mqHeartbeatTimeout.String())
 }

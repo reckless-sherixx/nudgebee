@@ -1,15 +1,15 @@
 import { test } from "@playwright/test";
-import { WorkflowLocators } from "../workflowlocators";
+import { WorkflowLocators } from "../../workflowlocators";
 import {
   generateWorkflowName,
   loginAndNavigateToNewWorkflow,
   pasteAndApplyWorkflowJson,
   saveNewWorkflow,
-  setWorkflowActiveAndSave,
   runWorkflowWithGraphQLValidation,
+  deleteCreatedWorkflow,
   closeActionPanel,
   dryRunAction,
-} from "../workflowHelper";
+} from "../../workflowHelper";
 
 const WORKFLOW_JSON_TEMPLATE = {
   definition: {
@@ -64,6 +64,7 @@ test("Automation workflow Resolve ticket", async ({ page }) => {
   await closeActionPanel(page, locators);
 
   await saveNewWorkflow(page, locators, workflowName);
-  await setWorkflowActiveAndSave(page, locators);
   await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Resolve ticket");
+
+  await deleteCreatedWorkflow(page, locators, workflowName);
 });

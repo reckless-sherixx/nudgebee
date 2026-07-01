@@ -33,6 +33,10 @@ import { Stat } from '@ui/Stat';
 import Trend from '@ui/Trend';
 import { Button } from '@ui/Button';
 import Tooltip from '@ui/Tooltip';
+import { hasWriteAccess } from '@lib/auth';
+import apiOwnership from '@api1/ownership';
+import OwnerBadge from '@components/ownership/OwnerBadge';
+import AssignOwnerModal from '@components/ownership/AssignOwnerModal';
 
 const _INSTANCE_TABLE_ID = 'INSTANCE_TABLE_ID';
 const _INSTANCE_HEADERS = ['Service Name', 'Account Name', 'Savings', 'Actions'];
@@ -933,6 +937,45 @@ const CostSummary = ({ clusterSummary = {}, currencySymbol = '$' }: any) => {
   );
 };
 
+// Owner of the cloud account itself (resource_type='cloud_account', key=accountId).
+// Shows the effective owner; tenant admins can assign/replace it. A namespace or
+// workload under this account with no direct owner inherits this owner.
+const AccountOwner = ({ accountId, accountName }: { accountId: string; accountName?: string }) => {
+  const [owner, setOwner] = useState<any>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const canEdit = hasWriteAccess(accountId);
+
+  const refetch = () => {
+    if (!accountId) return;
+    apiOwnership
+      .getOwner({ resourceType: 'cloud_account', resourceKey: accountId })
+      .then((res: any) => setOwner(res))
+      .catch(() => setOwner(null));
+  };
+  useEffect(() => {
+    refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
+
+  return (
+    <DSCard size='md' elevation='flat' sx={{ display: 'flex', alignItems: 'center', gap: ds.space[3] }}>
+      <Typography sx={{ fontSize: ds.text.bodyLg, fontWeight: ds.weight.medium, color: ds.gray[700] }}>Owner</Typography>
+      <OwnerBadge owner={owner} onClick={canEdit ? () => setAssignOpen(true) : undefined} />
+      {assignOpen ? (
+        <AssignOwnerModal
+          open={assignOpen}
+          onClose={() => setAssignOpen(false)}
+          onChange={refetch}
+          resourceType='cloud_account'
+          resourceKey={accountId}
+          cloudAccountId={accountId}
+          resourceLabel={accountName || accountId}
+        />
+      ) : null}
+    </DSCard>
+  );
+};
+
 const CloudAccountSummary = ({ accountId = '', clusterSummary = {}, loading = false, cloudProvider = '' }) => {
   const currencySymbol = useCurrencySymbol(accountId);
   const isCF = cloudProvider === 'CloudFoundry';
@@ -946,21 +989,28 @@ const CloudAccountSummary = ({ accountId = '', clusterSummary = {}, loading = fa
       {loading || currencySymbol === undefined ? (
         <SummarySkeletonLoader />
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: isCF ? '1.5fr 2fr' : '1.5fr 2fr 0.7fr',
-            alignItems: 'start',
-            columnGap: ds.space[4],
-            rowGap: ds.space[5],
-            mb: ds.space[6],
-            mt: ds.space[7],
-          }}
-        >
-          <ClusterSummary accountId={accountId} cloudProvider={cloudProvider} />
-          <UtilizationAndHealth accountId={accountId} clusterSummary={clusterSummary} />
-          {!isCF && <CostSummary clusterSummary={clusterSummary} currencySymbol={currencySymbol} />}
-        </Box>
+        <>
+          {accountId ? (
+            <Box sx={{ mt: ds.space[5], mb: ds.space[3] }}>
+              <AccountOwner accountId={accountId} accountName={(clusterSummary as any)?.account_name} />
+            </Box>
+          ) : null}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: isCF ? '1.5fr 2fr' : '1.5fr 2fr 0.7fr',
+              alignItems: 'start',
+              columnGap: ds.space[4],
+              rowGap: ds.space[5],
+              mb: ds.space[6],
+              mt: ds.space[7],
+            }}
+          >
+            <ClusterSummary accountId={accountId} cloudProvider={cloudProvider} />
+            <UtilizationAndHealth accountId={accountId} clusterSummary={clusterSummary} />
+            {!isCF && <CostSummary clusterSummary={clusterSummary} currencySymbol={currencySymbol} />}
+          </Box>
+        </>
       )}
       {!isCF && (
         <>

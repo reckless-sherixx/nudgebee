@@ -248,6 +248,19 @@ function sortAvailableCards(cards, criticalCards, highCards, infoCards) {
   return prioritized.map(({ C }) => C);
 }
 
+// Poll the event resolutions every 5s while a workflow resolution is live so the
+// "Workflow Resolution Status" button updates without a manual page refresh.
+const EVENT_RESOLUTIONS_POLL_INTERVAL_MS = 5000;
+// After an automation is triggered the InProgress event_resolution row is created
+// server-side asynchronously, so keep polling for a grace window even before any
+// InProgress row shows up — otherwise a slow insert would never surface live.
+const EVENT_RESOLUTIONS_POLL_GRACE_MS = 60000;
+
+// A WorkflowExecution resolution is "live" while InProgress; used to decide
+// whether to keep polling the event resolutions for a status change.
+const hasInProgressWorkflowResolution = (resolutions) =>
+  Array.isArray(resolutions) && resolutions.some((r) => r?.type === 'WorkflowExecution' && r?.status === 'InProgress');
+
 const Investigate = () => {
   const router = useRouter();
   const { id, autoInvestigate: k8sAutoInvestigate = 'false' } = router.query;
@@ -878,6 +891,94 @@ const Investigate = () => {
       cancelled = true;
     };
   }, [id, k8sAutoInvestigate, router.query.accountId, allCluster?.length]);
+
+  // ── Live workflow-resolution status ──
+  // The "Workflow Resolution Status" button reads from `eventResolutions`, which
+  // is otherwise fetched only on mount. When an automation is run for this event
+  // a WorkflowExecution resolution is created InProgress server-side and flips to
+  // a terminal status when the run finishes — neither transition was visible
+  // without a manual refresh. Poll the resolutions every 5s while a run is live
+  // (or just after a trigger) so the button reflects the real status.
+  const resolutionsPollActiveRef = useRef(false);
+  const resolutionsPollTimeoutRef = useRef(null);
+  const resolutionsPollDeadlineRef = useRef(0);
+  // Guards against overlapping fetches: a rapid tab hide/show while a request is
+  // in flight can otherwise let the visibilitychange resume spawn a second loop.
+  const resolutionsFetchingRef = useRef(false);
+
+  const refetchEventResolutions = useCallback(async () => {
+    if (!id) return null;
+    try {
+      const resolutions = await apiRecommendations.listEventResolutions(id);
+      if (isMountedRef.current) setEventResolutions(resolutions);
+      return resolutions;
+    } catch (err) {
+      console.error('Failed to refresh event resolutions:', err);
+      return null;
+    }
+  }, [id]);
+
+  // Recursive setTimeout (not setInterval) so requests never overlap; the next
+  // tick is scheduled only after the current fetch settles and only while a run
+  // is still live or within the post-trigger grace window.
+  const pollResolutions = useCallback(async () => {
+    resolutionsPollTimeoutRef.current = null; // this scheduled tick has fired
+    if (!resolutionsPollActiveRef.current || !isMountedRef.current) return;
+    if (document.hidden) return; // paused; visibilitychange resumes us
+    if (resolutionsFetchingRef.current) return; // a fetch is already in flight
+    resolutionsFetchingRef.current = true;
+    try {
+      const resolutions = await refetchEventResolutions();
+      if (!resolutionsPollActiveRef.current || !isMountedRef.current || document.hidden) return;
+      const withinGrace = Date.now() < resolutionsPollDeadlineRef.current;
+      if (hasInProgressWorkflowResolution(resolutions) || withinGrace) {
+        resolutionsPollTimeoutRef.current = setTimeout(pollResolutions, EVENT_RESOLUTIONS_POLL_INTERVAL_MS);
+      } else {
+        resolutionsPollActiveRef.current = false;
+      }
+    } finally {
+      resolutionsFetchingRef.current = false;
+    }
+  }, [refetchEventResolutions]);
+
+  // Idempotent: starts the loop with an immediate tick if it isn't already running.
+  const startResolutionsPoll = useCallback(() => {
+    if (resolutionsPollActiveRef.current) return;
+    resolutionsPollActiveRef.current = true;
+    pollResolutions();
+  }, [pollResolutions]);
+
+  // Called by RunAutomationMenu after a successful trigger. Open a grace window
+  // (the InProgress row may not exist yet) and start polling so the new run's
+  // status surfaces live.
+  const handleAutomationTriggered = useCallback(() => {
+    resolutionsPollDeadlineRef.current = Date.now() + EVENT_RESOLUTIONS_POLL_GRACE_MS;
+    startResolutionsPoll();
+  }, [startResolutionsPoll]);
+
+  // Loading the page on an event whose workflow is already InProgress (e.g.
+  // triggered earlier or from the listing page) should poll too.
+  useEffect(() => {
+    if (hasInProgressWorkflowResolution(eventResolutions)) startResolutionsPoll();
+  }, [eventResolutions, startResolutionsPoll]);
+
+  // Pause polling when the tab is hidden; resume on return if a run is still live.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden && resolutionsPollActiveRef.current && !resolutionsPollTimeoutRef.current) {
+        pollResolutions();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      resolutionsPollActiveRef.current = false;
+      if (resolutionsPollTimeoutRef.current) {
+        clearTimeout(resolutionsPollTimeoutRef.current);
+        resolutionsPollTimeoutRef.current = null;
+      }
+    };
+  }, [pollResolutions]);
 
   // Show/hide investigation cards based on demo message
   useEffect(() => {
@@ -2491,6 +2592,7 @@ const Investigate = () => {
                                 eventId={row.id}
                                 canRun={hasWriteAccess(automationAccountId)}
                                 onCreateAutomation={() => setShowTemplatesModal(true)}
+                                onTriggered={handleAutomationTriggered}
                               />
                             );
                           })()}

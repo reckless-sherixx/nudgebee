@@ -99,7 +99,7 @@ const KubernetesCreateAlert: React.FC<KubernetesCreateAlertProps> = ({
     const fetchFunctions = async () => {
       try {
         const response = await apiAskNudgebee.listFunctions({ accountId });
-        setFunctions((response as any).res?.llm_functions || []);
+        setFunctions((response as any)?.res?.llm_functions || []);
       } catch (error) {
         console.error('Error fetching functions:', error);
       }

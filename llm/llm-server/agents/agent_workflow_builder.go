@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"nudgebee/llm/agents/core"
@@ -15,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tmc/langchaingo/llms"
@@ -434,21 +436,24 @@ CURRENT AUTOMATION DEFINITION:
 `, definitionContext)
 	}
 
-	return fmt.Sprintf(`You are a Nudgebee automation assistant answering a QUESTION about an automation. You must EXPLAIN or DIAGNOSE only — you must NOT build, modify, fix, or apply any change.
+	return fmt.Sprintf(`You are a Nudgebee automation assistant answering a QUESTION about an automation, or running a non-destructive dry-run when asked. You must NOT build, modify, fix, or apply any change to the saved definition.
 
 USER QUESTION:
 %s
 %s
-AVAILABLE READ-ONLY TOOLS (use ONLY these; never init_workflow / add_task / modify_task / delete_task / validate / finalize):
+AVAILABLE TOOLS (use ONLY these; never init_workflow / add_task / modify_task / delete_task / validate / finalize):
 - list_tasks — list the automation's tasks
 - get_task — inspect a specific task
 - list_executions — list recent runs (use status="FAILED" for failure questions)
 - get_execution — read a run's task-level errors and outputs
+- dry_run — execute the automation against the engine WITHOUT persisting external side effects, returning per-task status and errors. This is how you verify it works or reproduce a failure.
 
 INSTRUCTIONS:
-- Failure questions ("why did it fail", "what is this error"): gather evidence first — list_executions(status="FAILED"), then get_execution on the most recent failed run. Quote the actual error, name the failing task, and explain the cause. Do NOT propose or apply a fix unless the user explicitly asks to fix it.
+- Dry-run / test requests ("dry run this", "test it", "does this work", "run it safely"): call dry_run, then report the overall result and, for any failing task, its id + error. Do NOT claim the automation "has no dry-run mode" — the engine dry-runs it for you. Dry-run does not modify the saved automation.
+- Failure questions ("why did it fail", "what is this error"): gather evidence first — list_executions(status="FAILED"), then get_execution on the most recent failed run; or dry_run to reproduce. Quote the actual error, name the failing task, and explain the cause. Do NOT propose or apply a fix unless the user explicitly asks to fix it.
 - Explain/summarize questions: describe the trigger, tasks, and flow from the definition above.
-- Capability/greeting questions: briefly say you can build, modify, explain, and diagnose automations.
+- Capability/greeting questions: briefly say you can build, modify, explain, diagnose, and dry-run automations.
+- TONE: be a proactive collaborator, not a dead-end. After answering, close by conversationally offering the single most useful next step for where the user is (e.g. dry-run to verify it works, fix a failing task, publish a version) phrased as a brief question — keep the conversation moving. Suggest only what actually fits the situation; never invent steps.
 - When you have the answer, emit a <final_answer> whose <content> is your prose answer in Markdown. Do NOT output a workflow JSON definition. Do NOT call finalize.`, userQuery, defSection)
 }
 
@@ -1377,8 +1382,16 @@ func (a *WorkflowBuilderAgent) finalizeWithAutoSave(ctx *security.RequestContext
 		return core.NBAgentResponse{Response: []string{workflowJSON}, IsTerminal: true}
 	}
 
+	// When the assistant is invoked from inside the editor (the embedded "Automation
+	// Context" chat), the user is already on the automation's editor page, so an
+	// "Open in Editor" link points back to where they are. Only surface the link for
+	// off-editor surfaces (e.g. ask-nudgebee chat). The editor canvas refreshes in place.
+	inEditor := request.ConversationSource == core.ConversationSourceWorkflowBuilder
+
 	resp := core.NBAgentResponse{IsTerminal: true}
 	switch {
+	case saved && inEditor:
+		// Saved from the editor — no link, the canvas refreshes in place.
 	case saved:
 		link := a.buildWorkflowEditorLink(request, workflowId)
 		if link == "" {
@@ -2945,6 +2958,47 @@ func (a *WorkflowBuilderAgent) toolValidate(ctx *security.RequestContext) string
 	return "Validation OK. The automation is valid."
 }
 
+// dryRunBuilderTimeout bounds the synchronous dry-run call from the builder loop. The
+// runbook dry-run handler can block up to its own ceiling; most automations finish in
+// seconds. A longer one is reported as still-running rather than hanging the loop.
+const dryRunBuilderTimeout = 3 * time.Minute
+
+// toolDryRun executes the current automation against the runbook engine WITHOUT
+// persisting external side effects, returning per-task status/errors. This is how the
+// editor's assistant verifies an automation works and diagnoses a failure with real
+// execution evidence (the engine supports dry-run even though there is no "dry-run
+// mode" baked into the definition). The dry-run endpoint takes the inner definition.
+func (a *WorkflowBuilderAgent) toolDryRun(ctx *security.RequestContext) string {
+	if a.state.WorkingWorkflow == nil {
+		return "Error: automation not initialized."
+	}
+	coerceWorkflowTypes(a.state.WorkingWorkflow)
+
+	// WorkingWorkflow is the full workflow object ({name, definition, ...}); the
+	// dry-run endpoint expects {definition: <inner>}. Fall back to sending the whole
+	// thing if there's no nested definition key.
+	var definition any = a.state.WorkingWorkflow
+	if inner, ok := a.state.WorkingWorkflow["definition"]; ok {
+		definition = inner
+	}
+	body := map[string]any{"definition": definition}
+	if name, ok := a.state.WorkingWorkflow["name"].(string); ok && name != "" {
+		body["name"] = name
+	}
+
+	reqCtx, cancel := context.WithTimeout(context.Background(), dryRunBuilderTimeout)
+	defer cancel()
+
+	resp, err := tools.DoRunbookRequestWithContext(reqCtx, "POST", "workflows/dry-run", body, a.accountId, ctx.GetSecurityContext().GetTenantId(), ctx.GetSecurityContext().GetUserId())
+	if err != nil {
+		if errors.Is(reqCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Sprintf("Dry-run is still running after %s — this automation is long-running. Trigger it as a real run and inspect the execution instead.", dryRunBuilderTimeout)
+		}
+		return fmt.Sprintf("Dry-run FAILED to start: %s", common.SanitizeErrorMessage(err.Error()))
+	}
+	return "Dry-run complete. Result (per-task status and errors):\n" + tools.SummarizeDryRunResponse(resp)
+}
+
 // isRealTemplateSyntaxError reports whether an "unable to execute template" error carries a marker
 // of a genuine syntax/filter mistake (bad filter, unsupported JMESPath/JSONPath projection,
 // malformed expression) rather than a value that is merely unknown until execution time. Such
@@ -3114,6 +3168,8 @@ func (a *WorkflowBuilderAgent) executeWorkflowTool(ctx *security.RequestContext,
 		return a.toolGetTaskSchema(args, cachedTaskTypes)
 	case "validate":
 		return a.toolValidate(ctx)
+	case "dry_run":
+		return a.toolDryRun(ctx)
 	case "finalize":
 		return a.toolFinalize()
 	case "list_executions":
@@ -3121,7 +3177,7 @@ func (a *WorkflowBuilderAgent) executeWorkflowTool(ctx *security.RequestContext,
 	case "get_execution":
 		return a.toolGetExecution(ctx, args)
 	default:
-		return fmt.Sprintf("Unknown tool: '%s'. Available tools: init_workflow, add_task, get_task, modify_task, delete_task, list_tasks, get_task_schema, validate, finalize, list_executions, get_execution", toolName)
+		return fmt.Sprintf("Unknown tool: '%s'. Available tools: init_workflow, add_task, get_task, modify_task, delete_task, list_tasks, get_task_schema, validate, dry_run, finalize, list_executions, get_execution", toolName)
 	}
 }
 

@@ -78,7 +78,7 @@ describe('useLlmAsyncPolling', () => {
 
     await act(async () => {
       result.current.startPolling('session-1', onComplete);
-      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(3000);
     });
 
     expect(onComplete).toHaveBeenCalledWith({ status: 'COMPLETED', id: 'conv-1' });
@@ -94,7 +94,7 @@ describe('useLlmAsyncPolling', () => {
 
     await act(async () => {
       result.current.startPolling('session-1', onComplete);
-      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(3000);
     });
 
     expect(onComplete).toHaveBeenCalledWith({ status: 'FAILED' });
@@ -122,20 +122,20 @@ describe('useLlmAsyncPolling', () => {
 
     await act(async () => {
       result.current.startPolling('session-1', onComplete);
-      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(3000);
     });
 
     expect(result.current.isPolling).toBe(false);
     expect(onComplete).toHaveBeenCalledWith({ status: 'FAILED' });
   });
 
-  it('cleans up interval on unmount', () => {
-    const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+  it('cleans up timeout on unmount', () => {
+    const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
     mockGetConversation.mockReturnValue(new Promise(() => {}));
     const { result, unmount } = renderHook(() => useLlmAsyncPolling({ accountId: 'acc-1' }));
     act(() => result.current.startPolling('session-1', jest.fn()));
     unmount();
-    expect(clearIntervalSpy).toHaveBeenCalled();
-    clearIntervalSpy.mockRestore();
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
   });
 });

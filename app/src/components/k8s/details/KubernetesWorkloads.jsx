@@ -63,6 +63,8 @@ import { snackbar } from '@shared/snackbarService';
 import apiIntegrations from '@api1/integrations';
 import KubernetesLogsPattern from './KubernetesLogsPattern';
 import KubernetesPodsTable from './KubernetesPods';
+import BulkAssignOwnerModal from '@components/ownership/BulkAssignOwnerModal';
+import OwnershipPanel from '@components/ownership/OwnershipPanel';
 import LazyLoadComponent from '@shared/LazyLoadComponent';
 import SLOConfigDialog from '@components/k8s/common/SLOConfigDialog';
 import CustomTooltip from '@shared/CustomTooltip';
@@ -126,6 +128,7 @@ const KubernetesWorkloadsTable = ({ accountId, resource_ids = [] }) => {
     order: '',
   });
   const [disableOptions, setDisableOptions] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   // Git modal state
   const [isGitModalOpen, setIsGitModalOpen] = useState(false);
@@ -1557,6 +1560,11 @@ const KubernetesWorkloadsTable = ({ accountId, resource_ids = [] }) => {
         <ListingLayout.Toolbar
           actions={
             <>
+              {hasWriteAccess(accountId) ? (
+                <DsButton id='bulk-assign-owner' tone='secondary' size='md' onClick={() => setBulkOpen(true)}>
+                  Bulk assign owner
+                </DsButton>
+              ) : null}
               <CustomDateTimeRangePicker
                 passedSelectedDateTime={{
                   startTime: selectedDateRange.startDate,
@@ -2254,6 +2262,7 @@ const KubernetesWorkloadsTable = ({ accountId, resource_ids = [] }) => {
                   key: 'WorkloadDetails',
                   componentFn: workloadDetailsFn,
                 },
+                { text: 'Ownership', value: 10, key: 'ownership', componentFn: workloadOwnershipFn },
                 { text: 'Pods', value: 1, key: 'pods', componentFn: podsWithChartFn },
                 { text: 'Utilization Trends', value: 2, key: 'utilization3' },
                 { text: 'Cost Trends', value: 3, key: 'cost' },
@@ -2369,6 +2378,7 @@ const KubernetesWorkloadsTable = ({ accountId, resource_ids = [] }) => {
           />
         </ListingLayout.Body>
       </ListingLayout>
+      {bulkOpen ? <BulkAssignOwnerModal open={bulkOpen} onClose={() => setBulkOpen(false)} defaultAccountId={accountId} /> : null}
     </>
   );
 };
@@ -2383,6 +2393,18 @@ function workloadDetailsFn(accountId, drilldownQuery) {
         fallback={<div>Loading latency data...</div>}
       />
     </>
+  );
+}
+
+function workloadOwnershipFn(accountId, drilldownQuery) {
+  return (
+    <OwnershipPanel
+      resourceType='workload'
+      resourceKey={drilldownQuery?.data?.cloud_resource_id}
+      cloudAccountId={drilldownQuery?.data?.cloud_account_id || drilldownQuery?.accountId || accountId}
+      namespace={drilldownQuery?.data?.namespace || drilldownQuery?.namespaceName}
+      resourceLabel={drilldownQuery?.workloadName || drilldownQuery?.data?.name}
+    />
   );
 }
 

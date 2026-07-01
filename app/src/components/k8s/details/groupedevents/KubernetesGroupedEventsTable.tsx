@@ -426,6 +426,7 @@ const KubernetesGroupedEventsTable: React.FC<KubernetesGroupedEventsTableProps> 
       return [
         { value: 'Priority', label: 'Triage Score' },
         { value: 'Last Occurred', label: 'Last Occurred' },
+        { value: 'Count', label: 'Event Count' },
       ];
     }
     return [

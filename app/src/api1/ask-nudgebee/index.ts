@@ -299,8 +299,8 @@ const api = {
       });
       return response;
     } catch (error) {
-      console.log('failed to create ai feedback-', error);
-      return error;
+      console.error('failed to create ai feedback-', error);
+      return null;
     }
   },
   async listAiFeedback(queryRequest: any) {
@@ -348,8 +348,8 @@ const api = {
       const response = await queryGraphQL(gqlQuery, 'ListAiFeedback', {});
       return response;
     } catch (error) {
-      console.log('failed to create ai feedback-', error);
-      return error;
+      console.error('failed to list ai feedback-', error);
+      return null;
     }
   },
   async aiGenerateInvestigate(data: any) {
@@ -704,8 +704,8 @@ const api = {
       });
       return response;
     } catch (error) {
-      console.log('failed to save conversation-', error);
-      return error;
+      console.error('failed to save conversation-', error);
+      return null;
     }
   },
   async listAgents(data: any) {
@@ -723,8 +723,8 @@ const api = {
       const response = await queryGraphQL(LIST_AGENTS.replaceAll('__WHERE__', gqlStringify(query)), 'ListAgents', {});
       return response;
     } catch (error) {
-      console.log('failed to fetch agent list-', error);
-      return error;
+      console.error('failed to fetch agent list-', error);
+      return null;
     }
   },
   async listTools(data: any) {
@@ -744,8 +744,8 @@ const api = {
       const response = await queryGraphQL(LIST_TOOLS.replaceAll('__WHERE__', gqlStringify(query)), 'ListTools', {});
       return response;
     } catch (error) {
-      console.log('failed to fetch tool list-', error);
-      return error;
+      console.error('failed to fetch tool list-', error);
+      return null;
     }
   },
   async createAgent(data: any) {
@@ -769,8 +769,8 @@ const api = {
       const response = await queryGraphQL(CREATE_AGENT.replaceAll('__WHERE__', gqlStringify(data)), 'AiCreateAgent', {});
       return response;
     } catch (error) {
-      console.log('failed to fetch create agent-', error);
-      return error;
+      console.error('failed to create agent-', error);
+      return null;
     }
   },
   async createTool(data: any) {
@@ -794,8 +794,8 @@ const api = {
       const response = await queryGraphQL(CREATE_TOOL.replaceAll('__WHERE__', gqlStringify(data)), 'AiCreateTool', {});
       return response;
     } catch (error) {
-      console.log('failed to fetch create tool-', error);
-      return error;
+      console.error('failed to create tool-', error);
+      return null;
     }
   },
   async deleteConversation(data: any) {
@@ -814,8 +814,8 @@ const api = {
       });
       return response;
     } catch (error) {
-      console.log('failed to delete conversation-', error);
-      return error;
+      console.error('failed to delete conversation-', error);
+      return null;
     }
   },
   async deleteSavedConversation(data: any) {
@@ -834,8 +834,8 @@ const api = {
       });
       return response;
     } catch (error) {
-      console.log('failed to delete saved conversation-', error);
-      return error;
+      console.error('failed to delete saved conversation-', error);
+      return null;
     }
   },
   async updateAgent(data: any) {
@@ -859,8 +859,8 @@ const api = {
       const response = await queryGraphQL(UPDATE_AGENT.replaceAll('__WHERE__', gqlStringify(data)), 'AiUpdateAgent', {});
       return response;
     } catch (error) {
-      console.log('failed to update agent-', error);
-      return error;
+      console.error('failed to update agent-', error);
+      return null;
     }
   },
   async updateTool(data: any) {
@@ -884,8 +884,8 @@ const api = {
       const response = await queryGraphQL(UPDATE_TOOL.replaceAll('__WHERE__', gqlStringify(data)), 'AiUpdateTool', {});
       return response;
     } catch (error) {
-      console.log('failed to update tool-', error);
-      return error;
+      console.error('failed to update tool-', error);
+      return null;
     }
   },
   async getConversationSuggestions(data: any) {
@@ -903,8 +903,8 @@ const api = {
       });
       return response;
     } catch (error) {
-      console.log('failed to get conversation suggestions-', error);
-      return error;
+      console.error('failed to get conversation suggestions-', error);
+      return null;
     }
   },
   async createRagData(data: any) {
@@ -928,11 +928,10 @@ const api = {
       const response = await queryGraphQL(CREATE_RAG_DATA, 'AiCreateRagData', {
         data: data,
       });
-      console.log(response);
       return response;
     } catch (error) {
-      console.log('failed to create rag data-', error);
-      return error;
+      console.error('failed to create rag data-', error);
+      return null;
     }
   },
   async listFunctions(data: any) {
@@ -969,8 +968,8 @@ const api = {
         errors: response?.data?.errors,
       };
     } catch (error) {
-      console.log('failed to get functions-', error);
-      return error;
+      console.error('failed to get functions-', error);
+      return null;
     }
   },
   async createAiFunction(data: any, accountId: string) {
@@ -1020,7 +1019,7 @@ const api = {
       }
       return { success: false, error: 'Unknown error occurred' };
     } catch (error) {
-      console.log('failed to create ai function-', error);
+      console.error('failed to create ai function-', error);
       return { success: false, error: 'Network error occurred' };
     }
   },
@@ -1101,8 +1100,8 @@ const api = {
       const response = await queryGraphQL(DELETE_AGENT, 'AiDeleteAgent', { accountId: accountId, name: agentName });
       return response;
     } catch (error) {
-      console.log('failed to delete agent-', error);
-      return error;
+      console.error('failed to delete agent-', error);
+      return null;
     }
   },
   async createAgentExtension(data: any) {
@@ -1126,8 +1125,8 @@ const api = {
       const response = await queryGraphQL(CREATE_AGENT_EXTENSION.replace('__REQUEST__', gqlStringify(data)), 'AiCreateAgentExtension', {});
       return response;
     } catch (error) {
-      console.log('failed to create agent extension-', error);
-      return error;
+      console.error('failed to create agent extension-', error);
+      return null;
     }
   },
   async updateAgentExtension(data: any) {
@@ -1151,8 +1150,8 @@ const api = {
       const response = await queryGraphQL(UPDATE_AGENT_EXTENSION.replace('__REQUEST__', gqlStringify(data)), 'AiUpdateAgentExtension', {});
       return response;
     } catch (error) {
-      console.log('failed to create agent extension-', error);
-      return error;
+      console.error('failed to update agent extension-', error);
+      return null;
     }
   },
   async listAgentExtensions(accountId: string) {
@@ -1191,7 +1190,7 @@ const api = {
         errors: response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to list agent extensions-', error);
+      console.error('failed to list agent extensions-', error);
       return { data: [], errors: [error] };
     }
   },
@@ -1218,7 +1217,7 @@ const api = {
         errors: response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to list agent extensions-', error);
+      console.error('failed to delete llm function-', error);
       return { data: [], errors: [error] };
     }
   },
@@ -1240,7 +1239,6 @@ const api = {
         }
       }
     `;
-    console.log('updating function with data-', data, 'accountId-', accountId, 'functionId-', functionId);
     try {
       const response = await queryGraphQL(UPDATE_AI_FUNCTION.replaceAll('__WHERE__', gqlStringify(data)), 'AiEditFunction', {
         account_id: accountId,
@@ -1263,7 +1261,7 @@ const api = {
       }
       return { success: false, error: 'Unknown error occurred' };
     } catch (error) {
-      console.log('failed to update ai function-', error);
+      console.error('failed to update ai function-', error);
       return { success: false, error: 'Network error occurred' };
     }
   },
@@ -1482,7 +1480,7 @@ const api = {
         errors: response.data?.data?.ai_list_memory?.errors || response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to list memory-', error);
+      console.error('failed to list memory-', error);
       return { data: [], errors: [error] };
     }
   },
@@ -1527,7 +1525,7 @@ const api = {
         errors: response.data?.data?.ai_list_references?.errors || response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to list references-', error);
+      console.error('failed to list references-', error);
       return { data: [], errors: [error] };
     }
   },
@@ -1559,7 +1557,7 @@ const api = {
         errors: response.data?.data?.ai_delete_memory?.errors || response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to delete memory-', error);
+      console.error('failed to delete memory-', error);
       return { data: null, errors: [error] };
     }
   },
@@ -1584,7 +1582,7 @@ const api = {
         errors: response.data?.data?.ai_list_models?.errors || response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to list models-', error);
+      console.error('failed to list models-', error);
       return { data: {}, errors: [error] };
     }
   },
@@ -1617,7 +1615,7 @@ const api = {
         errors: response.data?.data?.ai_get_model_config?.errors || response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to get model config-', error);
+      console.error('failed to get model config-', error);
       return { data: {}, errors: [error] };
     }
   },
@@ -1645,7 +1643,7 @@ const api = {
         errors: response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to get workspace file-', error);
+      console.error('failed to get workspace file-', error);
       return { data: null, errors: [error] };
     }
   },
@@ -1670,7 +1668,7 @@ const api = {
         errors: response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to fetch RCA format-', error);
+      console.error('failed to fetch RCA format-', error);
       return { data: null, errors: [error] };
     }
   },
@@ -1698,7 +1696,7 @@ const api = {
         errors: response.data?.data?.ai_upsert_rcaformat?.errors || response.data?.errors || [],
       };
     } catch (error) {
-      console.log('failed to update RCA format-', error);
+      console.error('failed to update RCA format-', error);
       return { data: null, errors: [error] };
     }
   },

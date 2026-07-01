@@ -7931,6 +7931,8 @@ var table_metadata = map[string]TableDefinition{
 				Def:          "count(*)",
 				IsAggregated: true,
 			},
+			"tenant_id":    {Type: ColumnDefinitionTypeString},
+			"account_id":   {Type: ColumnDefinitionTypeString},
 			"autopilot_id": {Type: ColumnDefinitionTypeString},
 		},
 	},

@@ -136,7 +136,11 @@ type appConfig struct {
 	LLMServerAgentObservabilityMaxIterations  int `mapstructure:"llm_server_agent_observability_max_iterations"`
 	LLMServerAgentObservabilityTimeoutSeconds int `mapstructure:"llm_server_agent_observability_timeout_seconds"`
 	// LlmServerAgentPromqlCacheTTLMinutes defines the lifespan of PromQL query results in the cache.
-	LlmServerAgentPromqlCacheTTLMinutes         int `mapstructure:"llm_server_agent_promql_metrics_cache_ttl_minutes"`
+	LlmServerAgentPromqlCacheTTLMinutes int `mapstructure:"llm_server_agent_promql_metrics_cache_ttl_minutes"`
+	// LlmServerAgentSeriesMatchCacheTTLMinutes defines the lifespan of metrics_series_match
+	// (workload family discovery) results in the cache. Defaults to 30m — series for a workload
+	// change far slower than metric values, so a long TTL is cheap and cuts repeat lookups.
+	LlmServerAgentSeriesMatchCacheTTLMinutes    int `mapstructure:"llm_server_agent_series_match_cache_ttl_minutes"`
 	LlmServerAgentPromqlMaxToolRespChars        int `mapstructure:"llm_server_agent_promql_max_tool_response_chars"`
 	LlmServerAgentPrometheusMaxInlineDataPoints int `mapstructure:"llm_server_agent_prometheus_max_inline_data_points"`
 	LLMServerAgentMaxLogLines                   int `mapstructure:"llm_server_agent_max_loglines"`
@@ -508,6 +512,7 @@ func init() {
 	viper.SetDefault("llm_server_agent_observability_max_iterations", 7)
 	viper.SetDefault("llm_server_agent_observability_timeout_seconds", 180)
 	viper.SetDefault("llm_server_agent_promql_metrics_cache_ttl_minutes", 5)
+	viper.SetDefault("llm_server_agent_series_match_cache_ttl_minutes", 30)
 	viper.SetDefault("llm_server_agent_promql_max_tool_response_chars", 4000)
 	viper.SetDefault("llm_server_agent_prometheus_max_inline_data_points", 5) // reduced from 10; above this threshold raw values are replaced with a stats summary to avoid context bloat
 	viper.SetDefault("llm_server_planner_rewoo_investigation_max_steps", 6)
@@ -687,9 +692,9 @@ func init() {
 	viper.SetDefault("llm_server_react3_enabled", true)
 	viper.SetDefault("llm_server_rewoo_to_react3_enabled", true)
 	viper.SetDefault("llm_server_think_tool_enabled", true)
-	viper.SetDefault("llm_server_kg_tools_enabled", false)
+	viper.SetDefault("llm_server_kg_tools_enabled", true)
 	viper.SetDefault("llm_server_kg_get_node_enabled", false)
-	viper.SetDefault("llm_server_service_dependency_graph_v2_enabled", false)
+	viper.SetDefault("llm_server_service_dependency_graph_v2_enabled", true)
 	viper.SetDefault("llm_server_evaluation_enabled", false)
 	viper.SetDefault("llm_server_auto_identify_account_enabled", false)
 	viper.SetDefault("llm_server_image_support_enabled", false)

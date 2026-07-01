@@ -122,6 +122,7 @@ type appConfig struct {
 
 	OptimizationEnabled                           bool `mapstructure:"runbook_server_optimization_enabled"`
 	OptimizationRecommendationPollIntervalSeconds int  `mapstructure:"runbook_server_optimization_poll_interval_seconds"`
+	WebhookMaxBodySizeMB                          int  `mapstructure:"webhook_max_body_size_mb"`
 }
 
 func init() {
@@ -132,6 +133,7 @@ func init() {
 	viper.SetDefault("AUTO_PILOT_DATABASE_URL", "postgres://temporal:temporal@localhost:5432/temporal?sslmode=disable")
 	viper.SetDefault("runbook_server_optimization_enabled", true)
 	viper.SetDefault("runbook_server_optimization_poll_interval_seconds", 180)
+	viper.SetDefault("webhook_max_body_size_mb", 5)
 
 	viper.SetDefault("nudgebee_encryption_key", "")
 

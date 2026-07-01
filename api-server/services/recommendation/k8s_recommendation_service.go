@@ -481,6 +481,7 @@ func processImageScanner(ctx *security.RequestContext, accountId string, dbms *d
 				  AND r.tenant_id = ri.tenant_id
 				  AND r.category = 'Security' AND r.rule_name = 'image_scan'
 				  AND r.account_object_id IS NOT NULL
+				  AND r.status != 'Archive'
 				  AND r.recommendation->>'image_name' = ri.image
 			)
 			AND ri.image NOT IN (SELECT image_name FROM scanned_tasks WHERE image_name IS NOT NULL)
@@ -585,6 +586,15 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 	// the per-image NOT EXISTS rides idx_recommendation_security_account_image_name
 	// as a nested-loop 3-column index probe instead of seq scanning the whole
 	// recommendation table. Here tenant_id is an explicit parameter on every clause.
+	// The fs-scan path needs the node each image is pulled on (it pins the scan
+	// Job there to reuse the node-local image — see buildImageScanSpec), so we
+	// carry cr.meta->>'node' alongside the image.
+	//
+	// No agent_task exclusion here. The legacy `scanned_tasks` anti-join skipped
+	// any image that already had an image_scanner agent_task row — but the legacy
+	// agent no longer registers that action, so those rows are all permanent
+	// FAILEDs ("action not registered"), which silently starved this path of every
+	// image. Dispatch is server-orchestrated now; agent_task is irrelevant.
 	rows, err := dbms.Db.Queryx(`
 		WITH running_images AS MATERIALIZED (
 			SELECT DISTINCT ON (container->>'image')
@@ -593,6 +603,7 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 				cr.tenant_id,
 				cr.name,
 				cr.meta->>'namespace' as namespace,
+				cr.meta->>'node' as node,
 				cr.workload_type as kind
 			FROM k8s_pods cr
 			CROSS JOIN LATERAL jsonb_array_elements(cr.meta->'config'->'containers') as container
@@ -602,15 +613,8 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 				AND cr.status = 'Running'
 				AND cr.meta->>'namespace' NOT IN ('kube-system', 'nudgebee-agent')
 				AND cr.workload_type != 'Job'
-		),
-		scanned_tasks AS (
-			SELECT at2.payload->'action_params'->>'image_name' AS image_name
-			FROM agent_task at2
-			WHERE at2.cloud_account_id = $1
-			  AND at2.tenant = $2
-			  AND at2.payload->>'action_name' = 'image_scanner'
 		)
-		SELECT ri.image, ri.cloud_account_id, ri.tenant_id, ri.name, ri.namespace, ri.kind
+		SELECT ri.image, ri.cloud_account_id, ri.tenant_id, ri.name, ri.namespace, ri.node, ri.kind
 		FROM running_images ri
 		WHERE NOT EXISTS (
 				SELECT 1 FROM recommendation r
@@ -618,9 +622,9 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 				  AND r.tenant_id = $2
 				  AND r.category = 'Security' AND r.rule_name = 'image_scan'
 				  AND r.account_object_id IS NOT NULL
+				  AND r.status != 'Archive'
 				  AND r.recommendation->>'image_name' = ri.image
 			)
-			AND ri.image NOT IN (SELECT image_name FROM scanned_tasks WHERE image_name IS NOT NULL)
 		LIMIT 5
 	`, accountId, tenantId)
 	if err != nil {
@@ -628,28 +632,38 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 	}
 	defer func() { _ = rows.Close() }()
 
-	images := []string{}
+	type pendingImage struct{ image, node string }
+	pending := []pendingImage{}
 	for rows.Next() {
 		row := make(map[string]any)
 		if err := rows.MapScan(row); err != nil {
 			return fmt.Errorf("image_scanner: scan row: %w", err)
 		}
-		if img, ok := row["image"].(string); ok && img != "" {
-			images = append(images, img)
+		img, _ := row["image"].(string)
+		if img == "" {
+			continue
 		}
+		node, _ := row["node"].(string)
+		if node == "" {
+			// The fs-scan pins the Job to this node to reuse the node-local image.
+			// Without it the Job schedules anywhere and IfNotPresent falls back to a
+			// registry pull (fails for private registries). Skip; a later cycle picks
+			// it up once discovery has populated the node.
+			ctx.GetLogger().Warn("image_scanner: skipping image with no node", "image", img, "account_id", accountId)
+			continue
+		}
+		pending = append(pending, pendingImage{image: img, node: node})
 	}
 	ctx.GetLogger().Info("image_scanner: pending images for server-orchestrated scan",
-		"account_id", accountId, "count", len(images))
-	if len(images) == 0 {
+		"account_id", accountId, "count", len(pending))
+	if len(pending) == 0 {
 		return nil
 	}
 
-	scanAccount := scan_orchestrator.ScanAccount{AccountID: accountId, TenantID: tenantId}
-
 	sem := make(chan struct{}, imageScanMaxConcurrent)
 	var wg sync.WaitGroup
-	for _, image := range images {
-		image := image
+	for _, p := range pending {
+		p := p
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -657,13 +671,19 @@ func runImageScannerServerOrchestrated(ctx *security.RequestContext, accountId, 
 			defer func() { <-sem }()
 			defer func() {
 				if r := recover(); r != nil {
-					ctx.GetLogger().Error("image_scanner: panic in per-image scan", "image", image, "panic", r)
+					ctx.GetLogger().Error("image_scanner: panic in per-image scan", "image", p.image, "panic", r)
 				}
 			}()
-			if err := scan_orchestrator.RunOne(ctx, scanAccount, "image_scanner", map[string]any{
-				"image": image,
-			}); err != nil {
-				ctx.GetLogger().Error("image_scanner: per-image scan failed", "image", image, "error", err)
+			// TargetImage/TargetNode drive buildImageScanSpec; per-image so each
+			// goroutine gets its own value (ScanAccount is a value type).
+			scanAccount := scan_orchestrator.ScanAccount{
+				AccountID:   accountId,
+				TenantID:    tenantId,
+				TargetImage: p.image,
+				TargetNode:  p.node,
+			}
+			if err := scan_orchestrator.RunOne(ctx, scanAccount, "image_scanner", nil); err != nil {
+				ctx.GetLogger().Error("image_scanner: per-image scan failed", "image", p.image, "node", p.node, "error", err)
 			}
 		}()
 	}
