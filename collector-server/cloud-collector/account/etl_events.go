@@ -99,13 +99,23 @@ func ConsumeCloudAccountEventsJobs(ctx *security.RequestContext, concurrency int
 
 	ctx.GetLogger().Info("events: starting cloud account events consumer", "concurrency", concurrency, "queue", config.Config.RabbitMqCloudAccountEventsQueue, "exchange", config.Config.RabbitMqCloudAccountEventsExchange)
 
+	// Declare and bind the DLQ so malformed messages routed via sendToDLQWithConfig
+	// are retained for inspection instead of being silently discarded by the broker.
+	if err := common.MqDeclareDLQ(config.Config.RabbitMqCloudAccountEventsDLQExchange, config.Config.RabbitMqCloudAccountEventsDLQQueue); err != nil {
+		ctx.GetLogger().Error("events: failed to declare DLQ", "error", err)
+	}
+
 	processor := func(data []byte) error {
 		var job CloudAccountEventsJob
 		err := common.UnmarshalJson(data, &job)
 		if err != nil {
-			// Permanent error - malformed message. ACK to prevent poison message loop.
-			// TODO: Send to DLQ for inspection
-			ctx.GetLogger().Error("events: failed to unmarshal job - dropping message", "error", err, "data", string(data))
+			// Permanent error - malformed message. Route to DLQ for inspection, then
+			// ACK to prevent a poison-message loop.
+			ctx.GetLogger().Error("events: failed to unmarshal job - sending to DLQ", "error", err, "data", string(data))
+			sendToDLQWithConfig(ctx, data, "unmarshal_error", err,
+				config.Config.RabbitMqCloudAccountEventsDLQExchange,
+				config.Config.RabbitMqCloudAccountEventsDLQQueue,
+			)
 			return nil // Return nil to ACK and drop the message
 		}
 

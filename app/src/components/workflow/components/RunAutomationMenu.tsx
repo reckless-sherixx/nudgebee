@@ -35,6 +35,10 @@ interface RunAutomationMenuProps {
   // or configure automations. Defaults to false so the gate fails closed.
   canRun?: boolean;
   onCreateAutomation?: () => void;
+  // Fired after an automation is successfully triggered for this event, so the
+  // caller can refresh any event-level status it renders (e.g. the investigation
+  // page's "Workflow Resolution Status" button) without a manual page refresh.
+  onTriggered?: () => void;
 }
 
 // Poll the triggered-executions list every 5s while the dropdown is open. Closed
@@ -157,7 +161,14 @@ const TriggeredExecutionRow: React.FC<{ ex: TriggeredExecution }> = ({ ex }) => 
   );
 };
 
-const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, eventId, disabled = false, canRun = false, onCreateAutomation }) => {
+const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({
+  accountId,
+  eventId,
+  disabled = false,
+  canRun = false,
+  onCreateAutomation,
+  onTriggered,
+}) => {
   const router = useRouter();
   const [workflows, setWorkflows] = useState<WorkflowListItem[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
@@ -343,6 +354,9 @@ const RunAutomationMenu: React.FC<RunAutomationMenuProps> = ({ accountId, eventI
       // Refresh so the just-triggered execution surfaces on the next open even
       // though the modal closed the dropdown (which stopped the poll loop).
       fetchExecutions();
+      // Let the caller refresh any event-level status it renders (the
+      // investigation page polls its WorkflowExecution resolution from here).
+      onTriggered?.();
     } catch (err) {
       console.error('Error triggering automation:', err);
       const msg = err instanceof Error && err.message ? err.message : `Failed to trigger automation "${selectedWorkflow.name}"`;

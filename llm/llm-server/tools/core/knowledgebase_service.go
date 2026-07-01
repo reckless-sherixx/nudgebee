@@ -1446,7 +1446,7 @@ func LoadAgentSkillContentsByIDs(sc *security.RequestContext, accountId string, 
 		       COALESCE(kb.data, '')        as data
 		FROM llm_knowledgebases kb
 		WHERE kb.account_id = $1
-		  AND kb.id = ANY($2::text[])
+		  AND kb.id = ANY($2::uuid[])
 		  AND kb.status = 'active'
 		ORDER BY kb.id, kb.name ASC`, accountId, pq.Array(ids))
 	if err != nil {

@@ -1,15 +1,17 @@
 import { test } from "@playwright/test";
-import { WorkflowLocators } from "../workflowlocators";
+import { WorkflowLocators } from "../../workflowlocators";
 import {
   generateWorkflowName,
   loginAndNavigateToNewWorkflow,
   pasteAndApplyWorkflowJson,
   saveNewWorkflow,
-  setWorkflowActiveAndSave,
   runWorkflowWithGraphQLValidation,
+  deleteCreatedWorkflow,
+  selectTicketIntegration,
+  selectProjectKey,
   closeActionPanel,
   dryRunAction,
-} from "../workflowHelper";
+} from "../../workflowHelper";
 
 const WORKFLOW_JSON_TEMPLATE = {
   definition: {
@@ -53,22 +55,8 @@ test("Automation workflow Create ticket Github", async ({ page }) => {
   await locators.action_tickets_create.click();
   await locators.dialog.waitFor({ state: "visible", timeout: 15000 });
 
-  const githubName = process.env.GITHUB_NAME ?? "";
-  await locators.integrationIdDropdown.waitFor({ state: "visible", timeout: 10000 });
-  await locators.integrationIdDropdown.click();
-  await page.waitForTimeout(300);
-  await page.keyboard.type(githubName);
-  await page.waitForTimeout(300);
-  await page.locator('[role="option"]').filter({ hasText: githubName }).first().click();
-  console.log(`Selected GitHub integration: ${githubName}`);
-
-  await locators.projectKeyDropdown.waitFor({ state: "visible", timeout: 10000 });
-  await locators.projectKeyDropdown.click();
-  await page.waitForTimeout(300);
-  await page.keyboard.type(process.env.GITHUB_PROJECT_KEY ?? "");
-  await page.waitForTimeout(300);
-  await page.locator('[role="option"]').filter({ hasText: process.env.GITHUB_PROJECT_KEY ?? "" }).first().click();
-  console.log(`Selected project: ${process.env.GITHUB_PROJECT_KEY}`);
+  await selectTicketIntegration(locators, process.env.GITHUB_NAME ?? "");
+  await selectProjectKey(page, locators, process.env.GITHUB_PROJECT_KEY ?? "");
 
   await locators.dialogContent.evaluate((el) => (el.scrollTop = el.scrollHeight));
   await page.waitForTimeout(500);
@@ -83,6 +71,7 @@ test("Automation workflow Create ticket Github", async ({ page }) => {
   await closeActionPanel(page, locators);
 
   await saveNewWorkflow(page, locators, workflowName);
-  await setWorkflowActiveAndSave(page, locators);
   await runWorkflowWithGraphQLValidation(page, locators, "Automation-> Action-> Create ticket Github");
+
+  await deleteCreatedWorkflow(page, locators, workflowName);
 });

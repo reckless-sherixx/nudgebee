@@ -3016,6 +3016,18 @@ func (s *Service) GetMultipleNodeNeighbors(reqCtx *security.RequestContext, node
 		edges, err = s.fetchEdgesByIDs(traversedEdgeIDs, discoveredNodeIDs, nil)
 		if err == nil {
 			edges = filterLayeredEdges(edges, nodeMinDepth, TraverseDirectionBoth)
+			// With multiple seeds the layered filter yields one tree per seed and drops
+			// the edges that connect them (they sit between equal-depth nodes, Δdepth≠1,
+			// and at the default depth aren't even walked). Re-add the minimal set of
+			// such edges so the selected seeds render as one connected graph instead of
+			// disconnected trees. Single-seed selections stay a connected tree → no-op.
+			if len(realSeeds) > 1 {
+				induced, indErr := s.fetchEdgesBetweenNodes(discoveredNodeIDs)
+				if indErr != nil {
+					return KnowledgeGraph{}, fmt.Errorf("failed to fetch edges for bridge reconnection: %w", indErr)
+				}
+				edges = addBridgeEdges(edges, induced)
+			}
 		}
 	}
 	if err != nil {
@@ -3934,29 +3946,31 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 		limit = 100
 	}
 
-	query := `SELECT id, node_type, COALESCE(source, '') AS source, query_attributes, labels, properties, cloud_account_id
-		FROM knowledge_graph_node
-		WHERE tenant_id = $1 AND is_active = true`
+	// Build the filter predicate once and share it between the COUNT (true total,
+	// pre-LIMIT) and the paged SELECT. Without the separate COUNT, total_count
+	// could only ever equal the returned page size, so a capped "list all X"
+	// result looked complete (e.g. 20 of 320 ExternalServices reported as 20).
+	whereClause := "tenant_id = $1 AND is_active = true"
 	args := []interface{}{tenantID}
 	argIdx := 2
 
 	if params.Name != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'name' = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'name' = $%d", argIdx)
 		args = append(args, params.Name)
 		argIdx++
 	}
 	if params.NamePattern != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'name' ILIKE $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'name' ILIKE $%d", argIdx)
 		args = append(args, params.NamePattern)
 		argIdx++
 	}
 	if params.Namespace != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'namespace' = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'namespace' = $%d", argIdx)
 		args = append(args, params.Namespace)
 		argIdx++
 	}
 	if params.Cluster != "" {
-		query += fmt.Sprintf(" AND query_attributes->>'cluster' = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND query_attributes->>'cluster' = $%d", argIdx)
 		args = append(args, params.Cluster)
 		argIdx++
 	}
@@ -3965,30 +3979,40 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 		for i, nt := range params.NodeTypes {
 			nodeTypeStrings[i] = string(nt)
 		}
-		query += fmt.Sprintf(" AND node_type = ANY($%d::text[])", argIdx)
+		whereClause += fmt.Sprintf(" AND node_type = ANY($%d::text[])", argIdx)
 		args = append(args, pq.Array(nodeTypeStrings))
 		argIdx++
 	}
 	if params.Source != "" {
-		query += fmt.Sprintf(" AND source = $%d", argIdx)
+		whereClause += fmt.Sprintf(" AND source = $%d", argIdx)
 		args = append(args, params.Source)
 		argIdx++
 	}
 	if len(params.AccountIDs) > 0 {
-		query += fmt.Sprintf(" AND cloud_account_id = ANY($%d::uuid[])", argIdx)
+		whereClause += fmt.Sprintf(" AND cloud_account_id = ANY($%d::uuid[])", argIdx)
 		args = append(args, pq.Array(params.AccountIDs))
 		argIdx++
 	}
 	if len(params.Labels) > 0 {
 		for key, value := range params.Labels {
-			query += fmt.Sprintf(" AND labels->>$%d = $%d", argIdx, argIdx+1)
+			whereClause += fmt.Sprintf(" AND labels->>$%d = $%d", argIdx, argIdx+1)
 			args = append(args, key, value)
 			argIdx += 2
 		}
 	}
 
-	query += " ORDER BY node_type, query_attributes->>'name'"
-	query += fmt.Sprintf(" LIMIT $%d", argIdx)
+	// True total of matching graph nodes (pre-LIMIT). Lets callers tell a "Found N
+	// (showing M)" page apart from a complete result instead of silently sampling.
+	var totalCount int
+	if err := s.dbManager.QueryRowAndScan(&totalCount,
+		"SELECT COUNT(*) FROM knowledge_graph_node WHERE "+whereClause, args...); err != nil {
+		return nil, fmt.Errorf("failed to count search nodes: %w", err)
+	}
+
+	query := "SELECT id, node_type, COALESCE(source, '') AS source, query_attributes, labels, properties, cloud_account_id" +
+		" FROM knowledge_graph_node WHERE " + whereClause +
+		" ORDER BY node_type, query_attributes->>'name'" +
+		fmt.Sprintf(" LIMIT $%d", argIdx)
 	args = append(args, limit)
 
 	rows, err := s.dbManager.Query(query, args...)
@@ -4046,6 +4070,9 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 	if results == nil {
 		results = []SearchNodeResult{}
 	}
+	// Graph-node rows returned before any synth-Pod merge below, so we can add
+	// the appended Pods onto the COUNT (Pods aren't in knowledge_graph_node).
+	graphResultCount := len(results)
 
 	// Synth Pod search. Pods are not in knowledge_graph_node, so the
 	// SQL above never returns them. When the caller's node-type filter
@@ -4065,8 +4092,11 @@ func (s *Service) SearchNodes(tenantID string, params SearchNodesParams) (*Searc
 	}
 
 	return &SearchNodesResponse{
-		Nodes:      results,
-		TotalCount: len(results),
+		Nodes: results,
+		// True graph-node total (pre-LIMIT) plus any synth Pods appended above.
+		// When the graph result was capped, totalCount stays > len(results) so the
+		// caller can surface "showing M of N"; otherwise it equals len(results).
+		TotalCount: totalCount + (len(results) - graphResultCount),
 	}, nil
 }
 
@@ -4458,6 +4488,78 @@ func filterLayeredEdges(edges []*DbEdge, nodeMinDepth map[string]int, direction 
 		}
 	}
 	return filtered
+}
+
+// addBridgeEdges reconnects a layered forest produced by filterLayeredEdges.
+//
+// With multiple seed nodes the layered filter keeps one tree per seed and drops
+// every edge that links them (those edges sit between equal-depth nodes, so
+// |Δdepth| ≠ 1, and at shallow traversal depths are never even walked). The
+// result is several disconnected trees even when the underlying graph connects
+// the selected seeds.
+//
+// candidateEdges is the induced edge set over the discovered nodes (every edge
+// whose endpoints are both in the result). Treating the layered edges as the
+// spanning forest, we add the minimal set of remaining edges that join two
+// otherwise-separate trees — a union-find spanning step. This keeps the layered
+// tree shape intact while guaranteeing the selected seeds render as one
+// connected component wherever the graph actually connects them. Candidates are
+// processed in a stable edge-id order so the chosen bridge is deterministic.
+func addBridgeEdges(layeredEdges, candidateEdges []*DbEdge) []*DbEdge {
+	if len(candidateEdges) == 0 {
+		return layeredEdges
+	}
+
+	parent := make(map[string]string)
+	var find func(string) string
+	find = func(x string) string {
+		p, ok := parent[x]
+		if !ok {
+			parent[x] = x
+			return x
+		}
+		if p != x {
+			parent[x] = find(p)
+		}
+		return parent[x]
+	}
+	union := func(a, b string) bool {
+		ra, rb := find(a), find(b)
+		if ra == rb {
+			return false
+		}
+		parent[ra] = rb
+		return true
+	}
+
+	// Seed the forest with the layered edges so each seed's tree is one component.
+	layeredIDs := make(map[string]struct{}, len(layeredEdges))
+	for _, e := range layeredEdges {
+		layeredIDs[e.ID] = struct{}{}
+		union(e.SourceNodeID, e.DestinationNodeID)
+	}
+
+	// Consider only the dropped (non-layered) induced edges as bridge candidates,
+	// in a deterministic order.
+	bridgeCandidates := make([]*DbEdge, 0, len(candidateEdges))
+	for _, e := range candidateEdges {
+		if _, isLayered := layeredIDs[e.ID]; !isLayered {
+			bridgeCandidates = append(bridgeCandidates, e)
+		}
+	}
+	sort.Slice(bridgeCandidates, func(i, j int) bool {
+		return bridgeCandidates[i].ID < bridgeCandidates[j].ID
+	})
+
+	result := layeredEdges
+	for _, e := range bridgeCandidates {
+		// Keep an edge only when it joins two currently-separate trees, so we add
+		// the fewest edges needed to connect the selected seeds.
+		if union(e.SourceNodeID, e.DestinationNodeID) {
+			result = append(result, e)
+		}
+	}
+	return result
 }
 
 // fetchEdgesByIDs retrieves a specific set of edges by ID, restricted to those
