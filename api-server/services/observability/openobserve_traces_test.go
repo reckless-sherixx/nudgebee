@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"nudgebee/services/integrations"
 	"nudgebee/services/query"
 	"testing"
 
@@ -63,11 +64,24 @@ func TestOpenObserveTraceSource_BuildSQL(t *testing.T) {
 		},
 	}
 
-	sql, err := s.buildSQL(req)
+	sql, err := s.buildSQL(req, integrations.OpenObserveDefaultTraceStream)
 	require.NoError(t, err)
 
 	expected := `SELECT * FROM "default" WHERE status_code = '2' ORDER BY _timestamp DESC LIMIT 25`
 	assert.Equal(t, expected, sql)
+}
+
+// The span stream is per-account config, not a constant. It is deliberately separate from
+// the log stream: OpenObserve keeps each signal in its own stream, so renaming one says
+// nothing about the other.
+func TestOpenObserveTraceSource_BuildSQLUsesConfiguredStream(t *testing.T) {
+	s := &OpenObserveTraceSource{}
+	req := TracesV3Request{QueryRequest: TracesQueryBuilderRequest{Limit: 10}}
+
+	sql, err := s.buildSQL(req, "otel_spans")
+	require.NoError(t, err)
+
+	assert.Equal(t, `SELECT * FROM "otel_spans" ORDER BY _timestamp DESC LIMIT 10`, sql)
 }
 
 func TestParseOpenObserveTraceHitsUsesNativeSchemaAndMicrosecondDuration(t *testing.T) {

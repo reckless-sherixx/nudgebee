@@ -56,6 +56,7 @@ func TestOpenObserve_ConfigSchema_PropertiesExist(t *testing.T) {
 	wantKeys := []string{
 		"openobserve_url", "openobserve_org_id",
 		"openobserve_username", "openobserve_password",
+		"openobserve_log_stream", "openobserve_trace_stream",
 		core.IntegrationConfigName, core.AccountId,
 		core.DefaultLogProvider, core.DefaultTraceProvider, core.DefaultMetricsProvider,
 	}
@@ -63,6 +64,22 @@ func TestOpenObserve_ConfigSchema_PropertiesExist(t *testing.T) {
 		_, ok := schema.Properties[key]
 		assert.True(t, ok, "schema.Properties must contain %q", key)
 	}
+}
+
+// Stream names are optional: an integration configured before the fields existed, or one
+// where the user left them blank, must still resolve to OpenObserve's default stream
+// rather than emitting FROM "".
+func TestOpenObserve_ConfigSchema_StreamsAreOptionalWithDefaults(t *testing.T) {
+	schema := OpenObserve{}.ConfigSchema()
+
+	assert.NotContains(t, schema.Required, "openobserve_log_stream")
+	assert.NotContains(t, schema.Required, "openobserve_trace_stream")
+	assert.Equal(t, OpenObserveDefaultLogStream, schema.Properties["openobserve_log_stream"].Default)
+	assert.Equal(t, OpenObserveDefaultTraceStream, schema.Properties["openobserve_trace_stream"].Default)
+
+	// Streams are not credentials — they must not be encrypted at rest.
+	assert.False(t, schema.Properties["openobserve_log_stream"].IsEncrypted)
+	assert.False(t, schema.Properties["openobserve_trace_stream"].IsEncrypted)
 }
 
 func TestOpenObserve_ConfigSchema_PasswordIsEncrypted(t *testing.T) {
